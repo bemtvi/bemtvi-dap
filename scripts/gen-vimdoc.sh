@@ -60,4 +60,13 @@ sed -i "s/\xe2\x80\x99/'/g; s/\xe2\x80\x98/'/g; s/\xe2\x80\x9c/\"/g; s/\xe2\x80\
 # entirely — the output is then reproducible and doesn't say "nxvim" twice.
 sed -i '2d' "$OUTPUT"
 
+# panvimdoc emits no blank line between the last table-of-contents entry and the
+# first body line, so the TOC runs straight into the intro. Insert one blank line
+# at that boundary (TOC entries end in "|link|"; the first body line does not).
+awk '
+  /^Table of Contents/ { seen = 1 }
+  seen && !done && prev ~ /\|$/ && $0 !~ /\|$/ && $0 !~ /^[[:space:]]*$/ { print ""; done = 1 }
+  { print; prev = $0 }
+' "$OUTPUT" > "$OUTPUT.tmp" && mv "$OUTPUT.tmp" "$OUTPUT"
+
 echo "done: $OUTPUT"

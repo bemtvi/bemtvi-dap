@@ -13,6 +13,7 @@ Table of Contents                                *nxvim-dap-table-of-contents*
 8. API                                                         |nxvim-dap-api|
 9. Highlights                                           |nxvim-dap-highlights|
 10. Trying it locally                            |nxvim-dap-trying-it-locally|
+
 A Debug Adapter Protocol (DAP) client for nxvim — the nxvim sibling of
 nvim-dap, built entirely on the native `nx.*` plugin API (ADR 0002): no
 buffer-mutation hacks, no bespoke rendering loop.
