@@ -1,0 +1,340 @@
+<!-- DO NOT EDIT doc/nxvim-dap.txt BY HAND. It is generated from this file by
+panvimdoc — run `scripts/gen-vimdoc.sh` after editing. -->
+
+A Debug Adapter Protocol (DAP) client for nxvim — the nxvim sibling of nvim-dap, built entirely on
+the native `nx.*` plugin API (ADR 0002): no buffer-mutation hacks, no bespoke rendering loop.
+
+A debug adapter is a long-lived child that speaks Content-Length-framed JSON over stdio — exactly
+like a language server — so nxvim-dap rides nxvim's duplex process primitive `nx.process`, frames
+the wire itself, paints breakpoint / stopped signs with extmarks, and renders the scopes/stack
+sidebar and REPL on read-only `nx.view` docks. Breakpoints live in real editor buffers; the panels
+own their own lines. It drives breakpoints (conditional / hit / log + exception filters), stepping
+and restart, a scopes/stack/watches sidebar with inline value editing, multiple concurrent
+sessions, and a REPL.
+
+Two adapter transports are supported: `type = "executable"` (a duplex stdio child over
+`nx.process`) and `type = "server"` (a TCP connection over `nx.socket`, optionally launching the
+adapter executable first).
+
+<!-- Passed through verbatim so `:help nxvim-dap` lands on this page (panvimdoc
+     derives per-section tags but no bare project tag). -->
+```vimdoc
+                                                                    *nxvim-dap*
+```
+
+# Why nx.process
+
+The keystone is `nx.process.open` — a bidirectional child whose stdin stays open for writes and
+whose stdout streams back as raw bytes. Neither `nx.run` (one-shot) nor `nx.run_stream` (read-only,
+newline-split) can carry a framed protocol, so this is the same transport an in-Lua language-server
+client would need; nxvim-dap is the first consumer.
+
+Adapters that speak over a TCP socket (`type = "server"`, e.g. codelldb, js-debug, or delve run as
+a server) ride `nx.socket.connect` — a duplex TCP sibling of `nx.process`. nxvim-dap optionally
+launches the adapter executable (it opens the port), then connects to `host:port`, retrying while
+it comes up. So both adapter kinds work.
+
+The REPL prompt and breakpoint conditions need nxvim's `nx.ui.input`; the adapter transport needs
+the native `nx.process` (a desktop/daemon session, not the serverless wasm build).
+
+# Features
+
+- Real adapter transport — launch/attach an executable debug adapter over a duplex stdio pipe
+  (`nx.process`), with the full DAP handshake (initialize → launch/attach → breakpoints →
+  configurationDone).
+- Breakpoints — toggle, conditional, and log points, plus a full edit flow for the condition / hit
+  count / log message, shown as gutter signs and synced live to a running session.
+  `:DapBreakpoints` lists them in a live named list (its own dock tab). In a `--workspace` session
+  they persist to the workspace's plugin shada and restore next time.
+- Exception breakpoints — pick the adapter's exception filters (e.g. raised / uncaught) from a
+  checkbox section in the sidebar; seeded at launch, pushed live, and persisted across restarts.
+- Stepping & restart — continue / step over / into / out / restart (via the adapter's restart
+  request or a terminate-and-relaunch), with the stopped line marked and the editor jumping to the
+  frame's source.
+- Sidebar — a dock showing the stopped thread's stack frames, the selected frame's scopes /
+  variables, watch expressions, the exception filters, and (with more than one session) a sessions
+  switcher.
+- Multiple concurrent sessions — run several debuggees at once; the panels follow the session that
+  stops, and `:DapSessions` switches the active one.
+- REPL / console — the adapter's `output` events plus an `evaluate` prompt that runs expressions in
+  the stopped frame. The prompt stays open like a real REPL (each `<CR>` evaluates and reopens,
+  `<Esc>` closes), with readline-style history (`<Up>` / `<Down>`) and `<Tab>` autocomplete (the
+  adapter's `completions` request).
+- nvim-dap parity — the same `adapters` / `configurations` two-table model, so a ported debug setup
+  reads almost identically.
+- Extensible — overridable highlights, rebindable keys, a public API, and the `adapters` /
+  `configurations` registries.
+
+# Setup
+
+```lua
+local dap = require("nxvim-dap")
+dap.setup({})
+
+dap.adapters.python = {
+  type = "executable",
+  command = "python3",
+  args = { "-m", "debugpy.adapter" },
+}
+dap.configurations.python = {
+  { type = "python", request = "launch", name = "Launch file", program = "${file}" },
+}
+```
+
+Then press `<F5>` (or `:DapContinue`) in a Python file. `setup()` is re-runnable — calling it again
+is a full reconfigure (merged fresh from the defaults). The optional table's defaults are:
+
+```lua
+require("nxvim-dap").setup({
+  signs = {
+    breakpoint = { text = "●", hl = "NxDapBreakpoint" },
+    breakpoint_condition = { text = "◆", hl = "NxDapBreakpointCondition" },
+    log_point = { text = "◇", hl = "NxDapLogPoint" },
+    stopped = { text = "▶", hl = "NxDapStopped", line_hl = "NxDapStoppedLine" },
+  },
+  sidebar = {
+    position = "right", width = 40, open_on_stopped = true,
+    -- buffer-local keys inside the sidebar (false disables one):
+    mappings = { edit = "e", add_watch = "a", remove = "x", refresh = "r" },
+  },
+  repl = { position = "bottom", height = 12, open_on_start = true },
+  mappings = { --[[ action → key; see Mappings. false disables one / all ]] },
+  jump_to_stopped = true,    -- jump the editor to the stopped frame
+  highlights = {},           -- highlight-group overrides
+  adapters = {},             -- seed the adapter registry (or assign dap.adapters.*)
+  configurations = {},       -- seed the configuration registry per filetype
+})
+```
+
+# Adapters and configurations
+
+Exactly nvim-dap's two-table model. `dap.adapters[name]` is one of:
+
+```lua
+local dap = require("nxvim-dap")
+
+-- An executable (a stdio child) …
+dap.adapters.lldb = { type = "executable", command = "lldb-dap" }
+
+-- … a TCP server the client connects to (optionally launching it first) …
+dap.adapters.codelldb = {
+  type = "server",
+  host = "127.0.0.1",
+  port = 13000,
+  executable = { command = "codelldb", args = { "--port", "13000" } },
+  -- options = { max_retries = 14, retry_delay = 250 },  -- while the port comes up
+}
+
+-- … or a function resolving one dynamically:
+dap.adapters.python = function(callback, _config)
+  callback({ type = "executable", command = "python3", args = { "-m", "debugpy.adapter" } })
+end
+```
+
+The full adapter shapes:
+
+```
+{ type = "executable", command, args, env, cwd }                (a stdio child)
+{ type = "server", host, port, executable = { command, … } }    (a TCP server)
+function(callback, config)                                      (a resolver)
+```
+
+`dap.configurations[filetype]` is a list of `{ type, request = "launch"|"attach", name, ... }`
+specs; `type` names the adapter.
+
+```lua
+dap.configurations.c = {
+  { type = "lldb", request = "launch", name = "Launch", program = "./a.out" },
+}
+```
+
+When you `:DapContinue` with no running session, nxvim-dap picks a configuration for the current
+buffer's filetype (prompting if there's more than one).
+
+# Variable expansion
+
+Configuration string values are expanded against the current editor context the moment a session
+starts (recursing into nested tables and `args` lists), so the nvim-dap idiom works as written:
+
+```
+${file}                     current buffer's absolute path
+${fileBasename}             its filename (with extension)
+${fileBasenameNoExtension}  its filename without the extension
+${fileDirname}              its directory
+${fileExtname}              its extension (no dot)
+${relativeFile}             the file relative to the working directory
+${relativeFileDirname}      the directory of ${relativeFile}
+${workspaceFolder}          the working directory (getcwd)
+${workspaceFolderBasename}  its basename
+${cwd}                      the working directory
+${env:NAME}                 the NAME environment variable ("" when unset)
+```
+
+A value may also be a function returning a string — called synchronously at launch, its result
+expanded in turn — for a path computed dynamically:
+
+```lua
+program = function() return vim.fn.getcwd() .. "/build/app" end  -- synchronous: return a string
+```
+
+The interactive VSCode forms resolve with a prompt at launch:
+
+```
+${input:id}    looks up config.inputs[id] (the launch.json shape
+               { id, type, description?, default?, options?, command?, args? })
+               and prompts per `type`: promptString (text), pickString (a menu
+               over `options`), or command (run a registered command).
+${command:id}  runs a handler registered with dap.register_command(id, fn);
+               fn(args, config) returns a string or a promise of one.
+```
+
+Each id is prompted once per launch. A missing definition, an unsupported input type, or a
+cancelled prompt aborts the launch; any other unrecognised `${...}` is left as-is and warned about.
+
+```lua
+dap.register_command("pickProcess", function()
+  return tostring(vim.fn.getpid()) -- or return a promise for an async pick
+end)
+
+dap.configurations.python = {
+  { type = "python", request = "launch", name = "Launch file", program = "${file}" },
+  {
+    type = "python", request = "launch", name = "Launch with args",
+    program = "${file}",
+    args = "${input:scriptArgs}",
+    inputs = {
+      { id = "scriptArgs", type = "promptString", description = "Arguments", default = "" },
+    },
+  },
+}
+```
+
+# Commands
+
+```
+:DapContinue [config]    Start debugging, or resume a stopped session (see below).
+:DapStepOver             Step over.
+:DapStepInto             Step into.
+:DapStepOut              Step out.
+:DapPause                Pause a running thread.
+:DapRestart              Restart the active session.
+:DapTerminate            End the active session.
+:DapTerminateAll         End every session.
+:DapSessions             Switch the active session.
+:DapToggleBreakpoint     Toggle a breakpoint at the cursor.
+:DapBreakpointCondition  Set a conditional breakpoint.
+:DapLogPoint             Set a log point.
+:DapEditBreakpoint       Edit condition / hit count / log message at the cursor.
+:DapBreakpoints          List every breakpoint in a named list.
+:DapClearBreakpoints     Remove every breakpoint.
+:DapExceptionBreakpoints Pick exception breakpoint filters.
+:DapWatch [expr]         Add a watch expression (no argument prompts).
+:DapWatchClear           Remove every watch expression.
+:DapReplToggle           Toggle the REPL / console.
+:DapSidebarToggle        Toggle the scopes / stack sidebar.
+:DapEval [expr]          Evaluate an expression in the stopped frame.
+```
+
+Three commands take an optional argument; the rest take none:
+
+- `:DapContinue [config]` — `[config]` is a configuration NAME (a key of `dap.configurations` for
+  the current buffer's filetype, or one merged in via `opts.configurations`). `<Tab>` completes the
+  names. With NO argument: resume a stopped session if one is running; otherwise launch the
+  filetype's configuration (prompting to choose when more than one applies).
+- `:DapEval [expr]` — `[expr]` is any expression the adapter can evaluate in the stopped frame (it
+  may contain spaces). With NO argument the REPL opens its `dap>` prompt instead, where each `<CR>`
+  evaluates a line.
+- `:DapWatch [expr]` — `[expr]` is the expression to add to the watches panel, re-evaluated on
+  every stop (it may contain spaces). With NO argument nxvim prompts for the expression.
+
+# Mappings
+
+Defaults (rebind / disable via `opts.mappings`):
+
+```
+<F5>          continue / start        <leader>db   toggle breakpoint
+<F10>         step over               <leader>dB   conditional breakpoint
+<F11>         step into               <leader>de   edit breakpoint
+<F12>         step out                <leader>dr   toggle REPL
+<F6>          restart                 <leader>du   toggle sidebar
+<leader>dx    terminate
+```
+
+Each function-key action also fires on its Shift variant (`<S-F5>`, `<S-F10>`, `<S-F11>`,
+`<S-F12>`, `<S-F6>`) — some terminals/keyboards send `Shift+Fn`. A `mappings` entry can be a single
+key or a list, so one action can bind to several keys.
+
+Inside the sidebar (buffer-local, configurable via `opts.sidebar.mappings`):
+
+```
+<CR>            expand variable / jump to frame / toggle filter / switch session
+<2-LeftMouse>   double-click — the mouse form of <CR> (single click = cursor)
+e               edit the value under the cursor (setVariable / setExpression)
+a               add a watch expression
+x               remove the watch under the cursor
+r               refresh scopes + watches
+```
+
+Rebind or disable any action through `opts.mappings` (a value of `false` on an entry, or
+`mappings = false` for all):
+
+```lua
+require("nxvim-dap").setup({
+  mappings = { continue = "<F9>", repl_toggle = false },
+})
+```
+
+# API
+
+```lua
+local dap = require("nxvim-dap")
+```
+
+- `setup(opts)` — configure (re-runnable).
+- `continue()` — start debugging / resume.
+- `run(config)` — start a specific launch/attach configuration (a new concurrent session).
+- `register_command(id, fn)` — register a `${command:id}` handler.
+- `restart()` — restart the active session.
+- `step_over()` / `step_into()` / `step_out()` — stepping.
+- `pause()` / `terminate()` / `terminate_all()` — pause / end one / end all.
+- `session()` / `sessions()` — the active `Session` (or `nil`) / every live session.
+- `set_active_session(s)` / `pick_session()` — switch the active session (direct / prompt).
+- `toggle_breakpoint()` — toggle a breakpoint at the cursor.
+- `set_breakpoint_condition()` / `set_log_point()` — prompt + set a conditional / log point.
+- `edit_breakpoint()` — edit condition / hit count / log message at the cursor.
+- `clear_breakpoints()` — remove all breakpoints.
+- `add_watch(expr)` / `clear_watches()` — add a watch (no arg → prompt) / remove all.
+- `set_exception_breakpoints()` — open the exception-filter picker.
+- `toggle_exception_filter(id)` / `is_exception_selected(id)` — toggle / query a filter.
+- `repl_toggle()` / `sidebar_toggle()` — toggle the panels.
+- `eval(expr)` — evaluate in the stopped frame (REPL).
+- `adapters` / `configurations` — the registries (assign into them directly).
+
+# Highlights
+
+Defined as fallbacks (a colorscheme or `opts.highlights` override wins):
+
+```
+NxDapBreakpoint  NxDapBreakpointCondition  NxDapBreakpointRejected
+NxDapLogPoint    NxDapStopped  NxDapStoppedLine
+NxDapUIScope  NxDapUIThread  NxDapUIFrame  NxDapUIFrameCurrent
+NxDapUIVarName  NxDapUIVarType  NxDapUIValue  NxDapUIDecoration
+NxDapReplPrompt  NxDapReplError
+```
+
+```lua
+require("nxvim-dap").setup({
+  highlights = { NxDapStopped = { fg = "#ffd54f", bold = true } },
+})
+```
+
+# Trying it locally
+
+This repo ships a runnable demo with a self-contained mock adapter (no debugger install needed):
+
+```sh
+NXVIM_CONFIG=examples nxvim examples/sample/fib.py
+```
+
+(run from the repo root). Toggle a breakpoint with `<leader>db`, hit `<F5>`, and watch the stopped
+sign, the sidebar, and the REPL.
