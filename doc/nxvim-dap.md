@@ -43,9 +43,11 @@ the native `nx.process` (a desktop/daemon session, not the serverless wasm build
   (`nx.process`), with the full DAP handshake (initialize → launch/attach → breakpoints →
   configurationDone).
 - Breakpoints — toggle, conditional, and log points, plus a full edit flow for the condition / hit
-  count / log message, shown as gutter signs and synced live to a running session.
-  `:DapBreakpoints` lists them in a live named list (its own dock tab). In a `--workspace` session
-  they persist to the workspace's plugin shada and restore next time.
+  count / log message, shown as gutter signs and synced live to EVERY running session (a breakpoint
+  belongs to the project, not to whichever session is active). Setting a condition on an existing
+  breakpoint merges into it, so a log point keeps its message. `:DapBreakpoints` lists them in a
+  live named list (its own dock tab). In a `--workspace` session they persist to the workspace's
+  plugin shada and restore next time.
 - Exception breakpoints — pick the adapter's exception filters (e.g. raised / uncaught) from a
   checkbox section in the sidebar; seeded at launch, pushed live, and persisted across restarts.
 - Stepping & restart — continue / step over / into / out / restart (via the adapter's restart
@@ -53,9 +55,11 @@ the native `nx.process` (a desktop/daemon session, not the serverless wasm build
   frame's source.
 - Sidebar — a dock showing the stopped thread's stack frames, the selected frame's scopes /
   variables, watch expressions, the exception filters, and (with more than one session) a sessions
-  switcher.
+  switcher. Selecting a frame focuses it everywhere: its scopes and the watches reload, and
+  `:DapEval` / the `dap>` prompt evaluate in THAT frame.
 - Multiple concurrent sessions — run several debuggees at once; the panels follow the session that
-  stops, and `:DapSessions` switches the active one.
+  stops, and `:DapSessions` switches the active one. A session that ends — however it ends —
+  disconnects and closes its adapter process, so no debug run leaves a child behind.
 - REPL / console — the adapter's `output` events plus an `evaluate` prompt that runs expressions in
   the stopped frame. The prompt stays open like a real REPL (each `<CR>` evaluates and reopens,
   `<Esc>` closes), with readline-style history (`<Up>` / `<Down>`) and `<Tab>` autocomplete (the
@@ -89,6 +93,7 @@ require("nxvim-dap").setup({
   signs = {
     breakpoint = { text = "●", hl = "NxDapBreakpoint" },
     breakpoint_condition = { text = "◆", hl = "NxDapBreakpointCondition" },
+    breakpoint_rejected = { text = "○", hl = "NxDapBreakpointRejected" },
     log_point = { text = "◇", hl = "NxDapLogPoint" },
     stopped = { text = "▶", hl = "NxDapStopped", line_hl = "NxDapStoppedLine" },
   },
@@ -97,7 +102,10 @@ require("nxvim-dap").setup({
     -- buffer-local keys inside the sidebar (false disables one):
     mappings = { edit = "e", add_watch = "a", remove = "x", refresh = "r" },
   },
-  repl = { position = "bottom", height = 12, open_on_start = true },
+  repl = {
+    position = "bottom", height = 12, open_on_start = true,
+    max_lines = 5000,        -- scrollback ceiling; 0 or false lifts it
+  },
   mappings = { --[[ action → key; see Mappings. false disables one / all ]] },
   jump_to_stopped = true,    -- jump the editor to the stopped frame
   highlights = {},           -- highlight-group overrides
@@ -216,7 +224,7 @@ dap.configurations.python = {
 :DapStepOver             Step over.
 :DapStepInto             Step into.
 :DapStepOut              Step out.
-:DapPause                Pause a running thread.
+:DapPause                Pause a running thread (the lowest-numbered one).
 :DapRestart              Restart the active session.
 :DapTerminate            End the active session.
 :DapTerminateAll         End every session.
@@ -303,6 +311,7 @@ local dap = require("nxvim-dap")
 - `set_breakpoint_condition()` / `set_log_point()` — prompt + set a conditional / log point.
 - `edit_breakpoint()` — edit condition / hit count / log message at the cursor.
 - `clear_breakpoints()` — remove all breakpoints.
+- `list_breakpoints()` — open every breakpoint in a live named list (its own dock tab).
 - `add_watch(expr)` / `clear_watches()` — add a watch (no arg → prompt) / remove all.
 - `set_exception_breakpoints()` — open the exception-filter picker.
 - `toggle_exception_filter(id)` / `is_exception_selected(id)` — toggle / query a filter.

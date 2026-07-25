@@ -55,9 +55,12 @@ local function index_at(bps, line)
   end
 end
 
--- Toggle (or set) a breakpoint at the cursor. `opts.condition` / `opts.logMessage`
--- set a conditional / log point — passing one when a plain breakpoint already exists
--- there UPGRADES it rather than removing it.
+-- Toggle (or set) a breakpoint at the cursor. `opts.condition` / `opts.logMessage` /
+-- `opts.hitCondition` set a conditional / log point — passing one when a breakpoint
+-- already exists there UPGRADES it (MERGING the given attributes into it) rather than
+-- removing it. Only the attributes actually passed are touched, so adding a condition
+-- to a log point keeps its message; clearing one is `set_at_cursor`'s job (the edit
+-- path, which writes the full attribute set).
 function M.toggle(opts)
   opts = opts or {}
   local path, line = here()
@@ -69,10 +72,10 @@ function M.toggle(opts)
   M.store[path] = bps
   local at = index_at(bps, line)
   if at then
-    if opts.condition or opts.logMessage then
-      bps[at].condition = opts.condition
-      bps[at].logMessage = opts.logMessage
-      bps[at].hitCondition = opts.hitCondition
+    if opts.condition or opts.logMessage or opts.hitCondition then
+      bps[at].condition = opts.condition or bps[at].condition
+      bps[at].logMessage = opts.logMessage or bps[at].logMessage
+      bps[at].hitCondition = opts.hitCondition or bps[at].hitCondition
     else
       table.remove(bps, at)
     end
@@ -199,11 +202,38 @@ function M.restore(data)
   M.render_all()
 end
 
--- Repaint signs for every file that has breakpoints (e.g. after a buffer opens, so
--- its gutter shows the breakpoints set while it was closed).
+-- Repaint signs for every file that has breakpoints (after a restore, or once at
+-- startup for the buffers already open). One buffer index is built for the whole sweep
+-- rather than re-scanning the buffer list per file.
 function M.render_all()
+  if next(M.store) == nil then
+    return
+  end
+  local index = signs.buf_index()
   for path, bps in pairs(M.store) do
-    signs.render_breakpoints(path, bps)
+    local bufnr = index[signs.abspath(path)]
+    if bufnr then
+      signs.render_breakpoints(path, bps, bufnr)
+    end
+  end
+end
+
+-- Repaint the signs of ONE buffer — the BufEnter path. A buffer that was closed when a
+-- breakpoint was set carries no marks until it comes back, and repainting just it costs
+-- nothing next to sweeping every file in the store on every buffer switch.
+function M.render_buf(bufnr)
+  bufnr = bufnr or nx.buf.current()
+  if not bufnr or not nx.buf.is_valid(bufnr) then
+    return
+  end
+  local name = nx.buf.name(bufnr)
+  if not name or name == "" then
+    return
+  end
+  local path = signs.abspath(name)
+  local bps = M.store[path]
+  if bps then
+    signs.render_breakpoints(path, bps, bufnr)
   end
 end
 

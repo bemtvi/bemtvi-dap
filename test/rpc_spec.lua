@@ -56,6 +56,36 @@ nx.test.describe("nxvim-dap.rpc", function()
     nx.test.expect(out[1].body.output).to_be("a\nb\r\nc")
   end)
 
+  -- A big reply (a `variables` response for a large container) arrives as many
+  -- pipe-sized reads. The decoder must reassemble it without re-copying everything
+  -- retained so far on each read, and hand back the exact payload.
+  nx.test.it("reassembles a large body delivered in many small chunks", function()
+    local big = string.rep("x", 200000)
+    local wire = rpc.encode({ type = "response", request_seq = 1, body = { value = big } })
+    local pieces = {}
+    for i = 1, #wire, 512 do
+      pieces[#pieces + 1] = wire:sub(i, i + 511)
+    end
+    nx.test.expect(#pieces > 300).to_be_truthy() -- genuinely many reads
+    local out, errs = decode_all(pieces)
+    nx.test.expect(#errs).to_be(0)
+    nx.test.expect(#out).to_be(1)
+    nx.test.expect(#out[1].body.value).to_be(#big)
+  end)
+
+  -- A frame torn mid-body must carry its tail into the next chunk — together with any
+  -- whole frames glued behind it.
+  nx.test.it("carries a torn frame's tail into the next chunk's frames", function()
+    local a = rpc.encode({ type = "event", event = "one" })
+    local b = rpc.encode({ type = "event", event = "two" })
+    local glued = a .. b
+    local cut = #a - 3 -- tear inside the first frame's body
+    local out = decode_all({ glued:sub(1, cut), glued:sub(cut + 1) })
+    nx.test.expect(#out).to_be(2)
+    nx.test.expect(out[1].event).to_be("one")
+    nx.test.expect(out[2].event).to_be("two")
+  end)
+
   nx.test.it("reports a malformed header loud, then resyncs", function()
     local good = rpc.encode({ type = "event", event = "ok" })
     local out, errs = decode_all({ "GET / HTTP/1.1\r\n\r\n", good })

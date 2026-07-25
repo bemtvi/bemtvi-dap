@@ -50,6 +50,10 @@ function M.defaults()
       position = "bottom", -- "bottom" | "left" | "right"
       height = 12,
       open_on_start = true, -- auto-open the REPL when a session starts
+      -- Scrollback ceiling: the oldest lines are dropped past it, so a debuggee that
+      -- logs in a loop can't grow the console (and the cost of repainting it) without
+      -- bound. `0` or `false` lifts the cap.
+      max_lines = 5000,
     },
     -- Default keymaps (false on any entry, or `mappings = false`, disables it). An
     -- entry can be a single lhs or a list; the F-key actions bind both the plain key

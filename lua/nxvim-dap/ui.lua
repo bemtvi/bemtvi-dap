@@ -57,17 +57,28 @@ end
 -- Install the buffer-local action keys on the view buffer (once). `<CR>` (and its mouse
 -- form, a double-click) are the view's built-in select; these add edit / add-watch /
 -- remove / refresh on top.
+--
+-- The view's backing buffer lands a tick after create, so this waits for it — through
+-- `nx.wait_for`, which polls BETWEEN ticks with a bounded try count. Re-arming
+-- `on_next_tick` by hand would spin forever if the buffer never materialized.
 function M._install_keymaps()
   if keymaps_installed or not view then
     return
   end
-  local buf = view:bufnr()
-  if not buf then
-    nx.on_next_tick(function()
-      M._install_keymaps()
-    end)
+  if not view:bufnr() then
+    nx.wait_for(function()
+      return view and view:bufnr()
+    end, { tries = 50, message = "nxvim-dap: the sidebar buffer never materialized" }):next(
+      function()
+        M._install_keymaps()
+      end,
+      function(err)
+        nx.notify(tostring(err and err.message or err), 4)
+      end
+    )
     return
   end
+  local buf = view:bufnr()
   local maps = (cfg and cfg.sidebar.mappings) or {}
   local actions = {
     edit = M.edit_value,
@@ -138,6 +149,47 @@ function M.clear()
   end
 end
 
+-- Repaint at the end of this convergence rather than per callback. One stop lands a
+-- scopes reply plus one reply per watch, each arriving separately; rendering on each
+-- would repaint the entire sidebar N times for a single stop.
+local render_queued = false
+local function render_soon()
+  if render_queued or not view then
+    return
+  end
+  render_queued = true
+  nx.schedule(function()
+    render_queued = false
+    M.render()
+  end)
+end
+
+-- The view's backing buffer lands a tick after create, and `:set_decor` is a no-op
+-- until it exists, so the paint that follows `open()` in the same tick would come out
+-- with no highlights at all. Wait for the buffer (once, bounded) and lay the
+-- decorations down then — the lines themselves already queued through `:set_lines`.
+local awaiting_buf = false
+local function decor_when_ready(pending_marks)
+  if awaiting_buf then
+    return
+  end
+  awaiting_buf = true
+  nx.wait_for(function()
+    return view and view:bufnr()
+  end, { tries = 50, message = "nxvim-dap: the sidebar buffer never materialized" }):next(
+    function()
+      awaiting_buf = false
+      if view and view:bufnr() then
+        view:set_decor(ns, pending_marks)
+      end
+    end,
+    function(err)
+      awaiting_buf = false
+      nx.notify(tostring(err and err.message or err), 4)
+    end
+  )
+end
+
 -- A new stopped snapshot arrived: store the frames, focus the top frame, and load
 -- its scopes + watches, then render.
 function M.show_stopped(snapshot)
@@ -159,6 +211,11 @@ end
 
 -- Make `frame` the active frame: load its scopes (one level of variables), re-evaluate
 -- the watches against it, and render.
+--
+-- The frame is pushed onto the SESSION too, not just the sidebar: `session.current_frame`
+-- is what `:DapEval` / the `dap>` prompt / hover evaluate in. Leaving it pinned to the
+-- top frame silently evaluated every expression in the wrong scope after you selected a
+-- caller in the stack.
 function M.focus_frame(frame)
   state.current = frame
   state.expanded = {}
@@ -167,9 +224,10 @@ function M.focus_frame(frame)
     M.render()
     return
   end
+  session.current_frame = frame
   session:frame_scopes(frame.id, function(scopes)
     state.scopes = scopes
-    M.render()
+    render_soon()
   end)
   M._eval_watches()
 end
@@ -216,7 +274,7 @@ function M._eval_watches()
           evaluateName = expr,
         }
       end
-      M.render()
+      render_soon()
     end)
   end
 end
@@ -352,7 +410,7 @@ function M._on_select(data)
       session:variables(ref, function(vars)
         state.children[ref] = vars
         state.expanded[ref] = true
-        M.render()
+        render_soon()
       end)
     end
   elseif data.kind == "exception" then
@@ -549,7 +607,14 @@ function M.render()
   state.data = data
   view:set_userdata(data)
   view:set_lines(lines)
-  view:set_decor(ns, marks)
+  if view:bufnr() then
+    view:set_decor(ns, marks)
+  else
+    -- The backing buffer lands a tick after create and `:set_decor` is a no-op until
+    -- then, so the first paint after `open()` would come out unhighlighted. Lay this
+    -- paint's marks down once the buffer exists.
+    decor_when_ready(marks)
+  end
 end
 
 return M

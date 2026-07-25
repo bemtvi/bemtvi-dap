@@ -152,6 +152,52 @@ nx.test.describe("nxvim-dap repl", function()
     nx.test.expect(lines[#lines]).to_be("hello")
   end)
 
+  -- A view's backing buffer only exists a tick after create, and `:set_decor` is a
+  -- no-op until then — so the very first paint (the "─ starting … ─" banner, written in
+  -- the same tick the console opens) lost its highlight for good: nothing repaints
+  -- those lines again. The decorations must land once the buffer arrives.
+  nx.test.it("highlights the lines written in the same tick the console opens", function(t)
+    repl._reset()
+    repl.open()
+    repl.info("─ starting demo ─") -- same tick as open(): no buffer yet
+    t:sleep(60)
+
+    local buf = repl.bufnr()
+    nx.test.expect(buf).never.to_be_nil()
+    local marks = nx.buf.extmarks(buf, nx.ns.create("nxvim-dap-repl"), 0, -1)
+    nx.test.expect(#marks).to_be(1)
+    nx.test.expect(marks[1][2]).to_be(0) -- { id, row, col } — on the banner line
+  end)
+
+  -- A chatty debuggee (a log loop, a test run) streams output events forever. The
+  -- scrollback is capped so the console can't grow without bound — and so a repaint,
+  -- which ships the whole buffer, stays O(cap) instead of O(everything ever printed).
+  nx.test.it("caps the scrollback and keeps the marks aligned after trimming", function(t)
+    dap.setup({ repl = { max_lines = 50 } })
+    repl._reset()
+    repl.open()
+
+    for i = 1, 200 do
+      repl.append_output("stdout", "line " .. i .. "\n")
+    end
+    repl.info("marker") -- a highlighted line, appended after the trim
+    t:sleep(60)
+
+    local buf = repl.bufnr()
+    local lines = nx.buf.lines(buf, 0, -1, false)
+    nx.test.expect(#lines).to_be(50)
+    nx.test.expect(lines[#lines]).to_be("marker") -- the newest line survives
+    nx.test.expect(lines[#lines - 1]).to_be("line 200")
+
+    -- The one surviving mark still points at the row it was pushed for (a naive trim
+    -- leaves every mark pointing `trimmed` rows too far down).
+    local marks = nx.buf.extmarks(buf, nx.ns.create("nxvim-dap-repl"), 0, -1)
+    nx.test.expect(#marks).to_be(1)
+    nx.test.expect(marks[1][2]).to_be(#lines - 1) -- { id, row, col }
+
+    dap.setup({}) -- restore the default cap for the specs that follow
+  end)
+
   nx.test.it("completes a REPL expression from the adapter, honoring start/length", function(t)
     -- A fake session mirroring how debugpy answers `os.get`: it completes the attribute
     -- after the dot, returning the member name (`getcwd`) with a 0-based replace span

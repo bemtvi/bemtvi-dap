@@ -11,6 +11,13 @@ local session
 local lines = {} -- the console scrollback
 local marks = {} -- per-line highlight marks (parallel to lines)
 local pending = "" -- partial output line awaiting its newline
+local render_queued = false -- a repaint is already scheduled for the end of this tick
+
+-- The scrollback ceiling. A repaint ships the WHOLE console (a view owns its lines), so
+-- an uncapped buffer would make a debuggee that logs in a loop cost O(everything ever
+-- printed) per output event — the O(N²) flood the editor must never do. The oldest lines
+-- are dropped once the cap is passed. `repl.max_lines = 0` (or false) lifts the cap.
+local DEFAULT_MAX_LINES = 5000
 
 local function ensure_view()
   if view then
@@ -76,11 +83,42 @@ function M.toggle()
   end
 end
 
+-- A view's backing buffer lands a tick AFTER create, and `:set_decor` is a no-op until
+-- it exists (`:set_lines` queues fine). A repaint issued in the same tick as `open()` —
+-- the "─ starting … ─" banner, the first burst of adapter output — would therefore lose
+-- its highlights for good, since nothing repaints those lines again. Wait for the
+-- buffer (once, bounded) and lay the decorations down then.
+--
+-- Only the DECORATIONS are re-applied: the lines are already in (they queue), and a
+-- full render would tail the cursor a tick late — after the user has moved it.
+local awaiting_buf = false
+local function decor_when_ready()
+  if awaiting_buf then
+    return
+  end
+  awaiting_buf = true
+  nx.wait_for(function()
+    return view and view:bufnr()
+  end, { tries = 50, message = "nxvim-dap: the REPL buffer never materialized" }):next(function()
+    awaiting_buf = false
+    if view and view:bufnr() then
+      view:set_decor(ns, marks)
+    end
+  end, function(err)
+    awaiting_buf = false
+    nx.notify(tostring(err and err.message or err), 4)
+  end)
+end
+
 function M.render()
   if not view then
     return
   end
   view:set_lines(#lines > 0 and lines or { "" })
+  if not view:bufnr() then
+    decor_when_ready()
+    return
+  end
   view:set_decor(ns, marks)
   -- Tail the newest line, but ONLY while the REPL is the focused window — `set_cursor`
   -- focuses the view, so doing it on every render would let adapter output yank the
@@ -89,6 +127,40 @@ function M.render()
   if #lines > 0 and is_focused() then
     view:set_cursor(#lines)
   end
+end
+
+-- The configured scrollback ceiling (0 / false = unbounded).
+local function max_lines()
+  local n = cfg and cfg.repl and cfg.repl.max_lines
+  if n == nil then
+    return DEFAULT_MAX_LINES
+  end
+  return (n and n > 0) and n or nil
+end
+
+-- Drop the oldest lines once the scrollback passes its ceiling, shifting every mark up
+-- by as many rows (a mark's row is an index into `lines`, so a trim that left them alone
+-- would smear every highlight down the console).
+local function trim()
+  local cap = max_lines()
+  if not cap or #lines <= cap then
+    return
+  end
+  local drop = #lines - cap
+  local kept = {}
+  for i = drop + 1, #lines do
+    kept[#kept + 1] = lines[i]
+  end
+  lines = kept
+  local kept_marks = {}
+  for _, m in ipairs(marks) do
+    if m.line >= drop then
+      m.line = m.line - drop
+      m.end_row = m.end_row - drop
+      kept_marks[#kept_marks + 1] = m
+    end
+  end
+  marks = kept_marks
 end
 
 -- Append `text` as one or more display lines, optionally highlighting each whole line
@@ -105,6 +177,23 @@ local function push(text, hl)
         { line = #lines - 1, col = 0, end_row = #lines - 1, end_col = #line, hl_group = hl }
     end
   end
+  trim()
+end
+
+-- Repaint once at the end of this convergence instead of per event. Adapter output
+-- arrives in bursts (a debuggee printing in a loop delivers many `output` events per
+-- tick) and a repaint ships the whole console, so painting per event turns a burst into
+-- O(events × scrollback). The user-paced paths (`info`, `eval`, `open`) render straight
+-- away — there is only ever one of those per action.
+local function render_soon()
+  if render_queued or not view then
+    return
+  end
+  render_queued = true
+  nx.schedule(function()
+    render_queued = false
+    M.render()
+  end)
 end
 
 -- Append text (which may contain several lines / a partial tail) from an output
@@ -120,17 +209,21 @@ function M.append_output(category, text)
   end
   pending = pending .. text:gsub("\r\n", "\n")
   local flushed = false
+  local pos = 1
   while true do
-    local nl = pending:find("\n", 1, true)
+    local nl = pending:find("\n", pos, true)
     if not nl then
       break
     end
-    push(pending:sub(1, nl - 1))
-    pending = pending:sub(nl + 1)
+    push(pending:sub(pos, nl - 1))
+    pos = nl + 1
     flushed = true
   end
+  -- One slice for the unconsumed tail, rather than re-slicing the whole buffer per line
+  -- (which is quadratic in a chunk carrying many lines — exactly what a burst looks like).
+  pending = pos > 1 and pending:sub(pos) or pending
   if flushed then
-    M.render()
+    render_soon()
   end
 end
 
@@ -275,6 +368,7 @@ function M._reset()
   lines = {}
   marks = {}
   pending = ""
+  render_queued = false
 end
 
 return M

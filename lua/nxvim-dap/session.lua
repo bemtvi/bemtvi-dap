@@ -35,7 +35,9 @@ function M.new(transport, handlers)
     stopped_thread_id = nil,
     current_frame = nil, -- the frame the UI is focused on
     threads = {}, -- id -> { id, name, stopped }
-    terminated = false,
+    terminated = false, -- the DEBUG session ended (the `terminated` event / a dead transport)
+    closed = false, -- the TRANSPORT is gone; no request can be written any more
+    exit_code = nil, -- the debuggee's exit code, from the `exited` event
   }, Session)
 end
 
@@ -64,8 +66,19 @@ function Session:feed(chunk)
 end
 
 -- Send a request and register `cb(err, body)` for its response. `err` is nil on
--- success, else `{ message = ... }`.
+-- success, else `{ message = ... }`. Once the transport is closed nothing can be
+-- written: the request FAILS its callback immediately rather than writing into a dead
+-- pipe and waiting forever for an answer that can't come.
 function Session:request(command, arguments, cb)
+  if self.closed then
+    if cb then
+      cb({
+        message = ("nxvim-dap: %s: the adapter connection is closed"):format(command),
+        cancelled = true,
+      })
+    end
+    return
+  end
   self.seq = self.seq + 1
   local seq = self.seq
   if cb then
@@ -80,8 +93,24 @@ function Session:request(command, arguments, cb)
   return seq
 end
 
+-- Settle every in-flight request with `reason`. A callback that is never called leaks
+-- its caller's state forever — a watch stuck at "…", a configure sequence that never
+-- finishes — so the end of the session is a failure for everything still outstanding.
+-- The error carries `cancelled = true`: a teardown is not an adapter fault, so callers
+-- report it in place (an unavailable value) rather than as a loud error notification.
+function Session:_fail_pending(reason)
+  local pending = self.pending
+  self.pending = {}
+  for _, cb in pairs(pending) do
+    cb({ message = reason, cancelled = true })
+  end
+end
+
 -- Respond to a reverse request the adapter sent us (runInTerminal / startDebugging).
 function Session:respond(request_msg, success, body, message)
+  if self.closed then
+    return
+  end
   self.seq = self.seq + 1
   self.transport.write(rpc.encode({
     seq = self.seq,
@@ -171,17 +200,46 @@ function Session:_on_event(event, body)
       self.handlers.on_continued(body)
     end
   elseif event == "thread" then
-    self.dirty_threads = true
+    -- A thread started or exited: refresh the table `pause` targets. One refresh is in
+    -- flight at a time, so a program spawning threads in a loop can't turn each event
+    -- into its own round-trip.
+    if not self._threads_inflight then
+      self._threads_inflight = true
+      self:request("threads", nil, function(err, tbody)
+        self._threads_inflight = false
+        if err then
+          return
+        end
+        self.threads = {}
+        for _, t in ipairs((tbody or {}).threads or {}) do
+          self.threads[t.id] = t
+        end
+      end)
+    end
   elseif event == "output" then
     if self.handlers.on_output then
       self.handlers.on_output(body.category or "console", body.output or "")
     end
-  elseif event == "terminated" or event == "exited" then
+  elseif event == "exited" then
+    -- The DEBUGGEE exited; the adapter itself lives on (a restart-capable one keeps
+    -- the session open). Remember the code so the terminated notice can report it.
+    self.exit_code = body.exitCode
+    if self.handlers.on_state then
+      self.handlers.on_state("exited")
+    end
+  elseif event == "terminated" then
+    -- The debug session is over. The adapter process is still running, though — it
+    -- exits when we disconnect, so tear the transport down or it lingers as an orphan
+    -- for the rest of the editor session.
     if not self.terminated then
       self.terminated = true
+      if body.exitCode == nil then
+        body.exitCode = self.exit_code
+      end
       if self.handlers.on_terminated then
         self.handlers.on_terminated(body)
       end
+      self:_shutdown({ terminate = false })
     end
   elseif event == "capabilities" then
     if body.capabilities then
@@ -251,7 +309,15 @@ end
 function Session:_finish_configuration()
   local function after_exceptions()
     if self.capabilities.supportsConfigurationDoneRequest then
-      self:request("configurationDone", nil, function()
+      self:request("configurationDone", nil, function(err)
+        if err then
+          -- Never flip to "configured" on a refused configurationDone: the session is
+          -- not running, and pretending it is makes every later push look accepted.
+          if not err.cancelled then
+            notify(self, "nxvim-dap: configurationDone failed: " .. tostring(err.message), 4)
+          end
+          return
+        end
         self.initialized = true
         if self.handlers.on_state then
           self.handlers.on_state("running")
@@ -311,7 +377,7 @@ function Session:set_exception_breakpoints(filters, cb)
     return
   end
   self:request("setExceptionBreakpoints", { filters = filters or {} }, function(err)
-    if err then
+    if err and not err.cancelled then
       notify(self, "nxvim-dap: setExceptionBreakpoints failed: " .. tostring(err.message), 4)
     end
     if cb then
@@ -344,8 +410,13 @@ end
 function Session:_on_stopped(body)
   self.stopped_thread_id = body.threadId
   -- threads → stackTrace(top thread) → scopes(top frame) → variables, each feeding
-  -- the next, then hand the assembled snapshot to the UI listener.
-  self:request("threads", nil, function(_, tbody)
+  -- the next, then hand the assembled snapshot to the UI listener. A failure anywhere
+  -- along the chain is reported: the panels would otherwise just sit empty, looking
+  -- like a stop with no stack rather than a request the adapter refused.
+  self:request("threads", nil, function(terr, tbody)
+    if terr and not terr.cancelled then
+      notify(self, "nxvim-dap: threads failed: " .. tostring(terr.message), 4)
+    end
     self.threads = {}
     for _, t in ipairs((tbody or {}).threads or {}) do
       self.threads[t.id] = t
@@ -359,16 +430,23 @@ function Session:_on_stopped(body)
       return
     end
     self.stopped_thread_id = tid
-    self:request("stackTrace", { threadId = tid, startFrame = 0, levels = 20 }, function(_, sbody)
-      local frames = (sbody or {}).stackFrames or {}
-      self.current_frame = frames[1]
-      -- Remember the snapshot so the UI can re-render this session when it later
-      -- becomes active again (a manual switch / a successor after termination).
-      self.last_snapshot = { frames = frames, threadId = tid }
-      if self.handlers.on_stopped then
-        self.handlers.on_stopped(body, self.last_snapshot)
+    self:request(
+      "stackTrace",
+      { threadId = tid, startFrame = 0, levels = 20 },
+      function(serr, sbody)
+        if serr and not serr.cancelled then
+          notify(self, "nxvim-dap: stackTrace failed: " .. tostring(serr.message), 4)
+        end
+        local frames = (sbody or {}).stackFrames or {}
+        self.current_frame = frames[1]
+        -- Remember the snapshot so the UI can re-render this session when it later
+        -- becomes active again (a manual switch / a successor after termination).
+        self.last_snapshot = { frames = frames, threadId = tid }
+        if self.handlers.on_stopped then
+          self.handlers.on_stopped(body, self.last_snapshot)
+        end
       end
-    end)
+    )
   end)
 end
 
@@ -376,7 +454,10 @@ end
 -- carries a resolved `variables` list (one level deep — nested structures expand on
 -- demand via `variables(ref)`).
 function Session:frame_scopes(frame_id, cb)
-  self:request("scopes", { frameId = frame_id }, function(_, body)
+  self:request("scopes", { frameId = frame_id }, function(err, body)
+    if err and not err.cancelled then
+      notify(self, "nxvim-dap: scopes failed: " .. tostring(err.message), 4)
+    end
     local scopes = (body or {}).scopes or {}
     local remaining = #scopes
     if remaining == 0 then
@@ -401,7 +482,10 @@ function Session:variables(ref, cb)
     cb({})
     return
   end
-  self:request("variables", { variablesReference = ref }, function(_, body)
+  self:request("variables", { variablesReference = ref }, function(err, body)
+    if err and not err.cancelled then
+      notify(self, "nxvim-dap: variables failed: " .. tostring(err.message), 4)
+    end
     cb((body or {}).variables or {})
   end)
 end
@@ -496,7 +580,7 @@ local function step(self, command)
     self.handlers.on_continued({})
   end
   self:request(command, { threadId = tid }, function(err)
-    if err then
+    if err and not err.cancelled then
       notify(self, ("nxvim-dap: %s failed: %s"):format(command, tostring(err.message)), 4)
     end
   end)
@@ -515,35 +599,55 @@ function Session:step_out()
   step(self, "stepOut")
 end
 
+-- Pause a running thread. Without an explicit `thread_id` the LOWEST known thread id is
+-- used — `next()` would hand back an arbitrary one, so which thread `:DapPause` hit
+-- varied run to run.
 function Session:pause(thread_id)
-  self:request("pause", { threadId = thread_id or next(self.threads) }, function(err)
-    if err then
+  if not thread_id then
+    for id in pairs(self.threads) do
+      if not thread_id or id < thread_id then
+        thread_id = id
+      end
+    end
+  end
+  self:request("pause", { threadId = thread_id }, function(err)
+    if err and not err.cancelled then
       notify(self, "nxvim-dap: pause failed: " .. tostring(err.message), 4)
     end
   end)
 end
 
--- Gracefully end the session: `disconnect` (terminate the debuggee), then close the
--- transport once the adapter acknowledges (or immediately if it never does).
-function Session:disconnect(opts)
-  opts = opts or {}
-  if self.terminated then
-    self.transport.close()
+-- Tear the adapter connection down, politely and exactly once: send `disconnect` (so
+-- the adapter can clean up its debuggee), then close the transport when it answers — or
+-- after a short grace period, so a wedged adapter can't keep the child alive forever.
+-- `opts.terminate` (default true) sets `terminateDebuggee`; `opts.grace` overrides the
+-- 500ms deadline. Idempotent: the second call is a no-op.
+function Session:_shutdown(opts)
+  if self._shutting_down then
     return
   end
-  local closed = false
+  self._shutting_down = true
+  opts = opts or {}
   local function close()
-    if not closed then
-      closed = true
-      self.transport.close()
+    if self.closed then
+      return
     end
+    self.closed = true
+    self:_fail_pending("nxvim-dap: the session ended before the adapter answered")
+    self.transport.close()
   end
   self:request("disconnect", {
     restart = false,
     terminateDebuggee = opts.terminate ~= false,
   }, close)
   -- Don't wait forever on a wedged adapter.
-  nx.timer(close, 500)
+  nx.timer(close, opts.grace or 500)
+end
+
+-- Gracefully end the session (the user's stop / terminate). `opts.terminate = false`
+-- leaves the debuggee running (a detach).
+function Session:disconnect(opts)
+  self:_shutdown(opts)
 end
 
 -- ----- spawning a real adapter child -----------------------------------------
@@ -558,13 +662,29 @@ local function resolve_adapter(adapter, config, cb)
   end
 end
 
--- Fire on_terminated once (guarding the flag), used when the transport dies.
+-- End the session once (guarding the flag), used when the transport dies: the child
+-- exited, the socket dropped, or we could never connect. The wire is gone, so there is
+-- nothing to disconnect from — mark it closed and settle every in-flight request
+-- instead of leaving their callbacks hanging.
 local function terminate_once(session, body)
+  body = body or {}
   if not session.terminated then
     session.terminated = true
-    if session.handlers.on_terminated then
-      session.handlers.on_terminated(body or {})
+    if body.exitCode == nil then
+      body.exitCode = session.exit_code
     end
+    if session.handlers.on_terminated then
+      session.handlers.on_terminated(body)
+    end
+  end
+  session._shutting_down = true
+  if not session.closed then
+    session.closed = true
+    session:_fail_pending("nxvim-dap: the adapter connection closed")
+    -- Release what is left of the transport. The wire that died is not necessarily the
+    -- whole child: a `server` adapter's launched executable outlives the socket, and
+    -- would keep running otherwise. Killing an already-dead child is harmless.
+    pcall(session.transport.close)
   end
 end
 

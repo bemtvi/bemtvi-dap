@@ -28,23 +28,28 @@ local function abspath(p)
   if not p or p == "" then
     return p
   end
-  if vim and vim.fn and vim.fn.fnamemodify then
-    return vim.fn.fnamemodify(p, ":p")
-  end
-  return p
+  return vim.fn.fnamemodify(p, ":p")
 end
 M.abspath = abspath
+
+-- abspath -> bufnr for every named buffer. One pass over the buffer list, so a caller
+-- repainting SEVERAL files (`render_all`, `render_stopped`) resolves them all for the
+-- cost of one scan instead of re-walking every buffer per path.
+function M.buf_index()
+  local index = {}
+  for _, b in ipairs(nx.buf.list()) do
+    local name = nx.buf.name(b)
+    if name and name ~= "" then
+      index[abspath(name)] = b
+    end
+  end
+  return index
+end
 
 -- The loaded buffer for `path`, or nil if the file isn't open (then it carries no
 -- signs — they appear when it's next opened and breakpoints re-sync).
 function M.path_bufnr(path)
-  local want = abspath(path)
-  for _, b in ipairs(nx.buf.list()) do
-    local name = nx.buf.name(b)
-    if name and name ~= "" and abspath(name) == want then
-      return b
-    end
-  end
+  return M.buf_index()[abspath(path)]
 end
 
 local function variant(bp)
@@ -59,20 +64,28 @@ local function variant(bp)
 end
 
 -- Repaint every breakpoint sign for `path` (clears the file's breakpoint namespace
--- first). `bps` is the list of `{ line, condition?, logMessage?, rejected? }`.
-function M.render_breakpoints(path, bps)
-  local bufnr = M.path_bufnr(path)
+-- first). `bps` is the list of `{ line, condition?, logMessage?, rejected? }`; `bufnr`
+-- is the file's buffer when the caller already resolved it (skipping the lookup).
+--
+-- A breakpoint past the end of the buffer (restored from the shada for a file that has
+-- since shrunk) is KEPT in the store — the file may grow back, and the adapter decides
+-- what it can verify — but there is no line to hang a sign on, so it paints nothing.
+function M.render_breakpoints(path, bps, bufnr)
+  bufnr = bufnr or M.path_bufnr(path)
   if not bufnr then
     return
   end
   nx.buf.clear_namespace(bufnr, bp_ns, 0, -1)
+  local last = nx.buf.line_count(bufnr)
   for _, bp in ipairs(bps) do
-    local v = variant(bp)
-    nx.buf.set_extmark(bufnr, bp_ns, bp.line - 1, 0, {
-      sign_text = v.text,
-      sign_hl_group = v.hl,
-      priority = 20,
-    })
+    if bp.line >= 1 and bp.line <= last then
+      local v = variant(bp)
+      nx.buf.set_extmark(bufnr, bp_ns, bp.line - 1, 0, {
+        sign_text = v.text,
+        sign_hl_group = v.hl,
+        priority = 20,
+      })
+    end
   end
 end
 
@@ -103,17 +116,28 @@ function M.clear_stopped(sid)
   M.render_stopped()
 end
 
--- Repaint every session's stopped marker: sweep the stopped namespace off all buffers
--- (the only way to drop a removed session's mark without tracking extmark ids), then
--- re-mark each live location.
+-- Repaint every session's stopped marker: drop the marks we painted last time, then
+-- re-mark each live location. Stepping repaints on every stop, so the sweep is kept to
+-- the buffers actually carrying a marker (`marked`) rather than every open buffer — a
+-- clear-all would cost one call per open buffer per step.
+local marked = {} -- bufnr -> true: the buffers currently carrying a stopped marker
+
 function M.render_stopped()
-  for _, b in ipairs(nx.buf.list()) do
-    nx.buf.clear_namespace(b, stopped_ns, 0, -1)
+  for bufnr in pairs(marked) do
+    -- The buffer may have been wiped since it was marked (`:bd` on the stopped file).
+    if nx.buf.is_valid(bufnr) then
+      nx.buf.clear_namespace(bufnr, stopped_ns, 0, -1)
+    end
+  end
+  marked = {}
+  if next(stopped_locs) == nil then
+    return
   end
   local s = cfg.stopped
+  local index = M.buf_index()
   for _, loc in pairs(stopped_locs) do
-    local bufnr = M.path_bufnr(loc.path)
-    if bufnr then
+    local bufnr = index[abspath(loc.path)]
+    if bufnr and loc.line >= 1 and loc.line <= nx.buf.line_count(bufnr) then
       local text = nx.buf.lines(bufnr, loc.line - 1, loc.line, false)[1] or ""
       nx.buf.set_extmark(bufnr, stopped_ns, loc.line - 1, 0, {
         sign_text = s.text,
@@ -123,6 +147,7 @@ function M.render_stopped()
         hl_group = s.line_hl,
         priority = 30,
       })
+      marked[bufnr] = true
     end
   end
 end

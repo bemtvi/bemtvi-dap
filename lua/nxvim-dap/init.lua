@@ -61,8 +61,10 @@ M._session = nil
 M.exception_filters = nil
 
 local session_seq = 0
-local hl_applied = false
 local autocmds_wired = false
+-- The lhs keys the last setup() installed, so a re-run can drop them before binding the
+-- new set (setup is a full reconfigure, not an additive one).
+local installed_maps = {}
 -- The workspace breakpoints are restored once, on the first setup() in a workspace
 -- session — re-running setup() must not clobber live breakpoints with the saved set.
 local bp_restored = false
@@ -98,11 +100,25 @@ function M._set_active(session)
   ui.render()
 end
 
+-- Every live session that has finished configuring — the set a breakpoint / exception
+-- filter change must reach. A breakpoint belongs to the PROJECT, not to whichever
+-- session happens to be active, so a change is pushed to all of them.
+function M._live_sessions()
+  local live = {}
+  for _, s in ipairs(M.sessions()) do
+    if s.initialized and not s.terminated then
+      live[#live + 1] = s
+    end
+  end
+  return live
+end
+
 -- Pick a successor active session after the active one ends: prefer one that is stopped
--- (so the panels show something actionable), else any live one, else nil.
+-- (so the panels show something actionable), else any live one, else nil. `M.sessions()`
+-- (newest first) drives the scan, so the choice is stable rather than hash order.
 local function pick_successor()
   local fallback
-  for _, s in pairs(M._sessions) do
+  for _, s in ipairs(M.sessions()) do
     if not s.terminated then
       fallback = fallback or s
       if s.stopped_thread_id then
@@ -113,15 +129,35 @@ local function pick_successor()
   return fallback
 end
 
--- A session ended: drop it from the registry, clear its stopped marker, fold the active
--- slot onto a successor (or nil), and — if it asked to restart — relaunch its config.
-function M._on_session_terminated(session, body)
+-- Drop `session` from the registry (with its stopped marker) and, when it held the
+-- active slot, fold that slot onto a successor — or empty the panels when it was the
+-- last one. The shared tail of "this session is gone", however it went.
+local function retire(session)
   if session.id then
     M._sessions[session.id] = nil
     signs.clear_stopped(session.id)
   end
+  if M._session ~= session then
+    return
+  end
+  local successor = pick_successor()
+  if successor then
+    M._set_active(successor)
+    M._refresh_active_view()
+  else
+    M._session = nil
+    ui.clear()
+    ui.set_session(nil)
+    repl.set_session(nil)
+  end
+end
+
+-- A session ended: retire it, announce it on the console, and — if it asked to restart
+-- — relaunch its config.
+function M._on_session_terminated(session, body)
   local restart_cfg = session._restart_with
     or (body and body.restart ~= nil and body.restart ~= false and session.config)
+  retire(session)
   repl.flush()
   local exit = body and body.exitCode
   repl.info(
@@ -131,19 +167,6 @@ function M._on_session_terminated(session, body)
       .. (exit ~= nil and (" (exit " .. tostring(exit) .. ")") or "")
       .. " ─"
   )
-
-  if M._session == session then
-    local successor = pick_successor()
-    if successor then
-      M._set_active(successor)
-      M._refresh_active_view()
-    else
-      M._session = nil
-      ui.clear()
-      ui.set_session(nil)
-      repl.set_session(nil)
-    end
-  end
 
   if restart_cfg then
     nx.on_next_tick(function()
@@ -406,27 +429,36 @@ function M.pause()
   end
 end
 
+-- Stop the active session. With nothing running this REPORTS rather than running the
+-- teardown for a session that never existed (which announced a phantom "terminated" on
+-- the console); a session the registry still holds but that has already ended is simply
+-- retired — its termination was announced when it happened.
 function M.terminate()
   local s = M._session
-  if s and not s.terminated then
-    s:disconnect({ terminate = true })
-  else
-    -- No live active session: tidy whatever the panels still show.
-    M._on_session_terminated(s or {}, nil)
+  if not s then
+    nx.notify("nxvim-dap: no active session", 3)
+    return
   end
+  if s.terminated then
+    retire(s)
+    return
+  end
+  s:disconnect({ terminate = true })
 end
 
 -- Terminate every live session (the global stop).
 function M.terminate_all()
   local any = false
-  for _, s in pairs(M._sessions) do
-    if not s.terminated then
+  for _, s in ipairs(M.sessions()) do
+    if s.terminated then
+      retire(s)
+    else
       any = true
       s:disconnect({ terminate = true })
     end
   end
   if not any then
-    M._on_session_terminated({}, nil)
+    nx.notify("nxvim-dap: no debug session is running", 3)
   end
 end
 
@@ -516,10 +548,13 @@ function M.toggle_exception_filter(id)
     end
   end
   M.exception_filters[id] = not M.exception_filters[id] or nil
-  local s = M._session
-  if s and s.initialized and not s.terminated then
+  -- The selection is plugin-wide, so push it to every live session (each mapped
+  -- through its OWN advertised filters — adapters don't share filter ids).
+  for _, s in ipairs(M._live_sessions()) do
     local caps = s.capabilities.exceptionBreakpointFilters
-    s:set_exception_breakpoints(M._exception_filter_list(caps) or {})
+    if caps then
+      s:set_exception_breakpoints(M._exception_filter_list(caps) or {})
+    end
   end
   ui.render()
 end
@@ -746,19 +781,20 @@ function M.setup(opts)
     M.configurations[k] = v
   end
 
-  if not hl_applied then
-    highlights.apply(M.config.highlights)
-    hl_applied = true
-  end
+  -- Re-applied on every setup() (it IS a full reconfigure, so a changed `highlights`
+  -- must take effect). Re-applying is safe: a default only fills a group the
+  -- colorscheme left undefined, so this never overrides a theme.
+  highlights.apply(M.config.highlights)
 
   signs.setup(M.config.signs)
   ui.setup(M.config)
   repl.setup(M.config)
 
-  -- Push breakpoint changes to a live, configured session.
+  -- Push breakpoint changes to every live, configured session — not just the active
+  -- one, which would leave the others debugging a stale breakpoint set.
   breakpoints.on_change = function(path, bps)
-    if M._session and M._session.initialized and not M._session.terminated then
-      M._session:set_breakpoints(path, bps)
+    for _, s in ipairs(M._live_sessions()) do
+      s:set_breakpoints(path, bps)
     end
   end
 
@@ -825,25 +861,36 @@ function M.setup(opts)
   -- Default keymaps (any false entry, or `mappings = false`, disables it). An entry's
   -- value is a single lhs string, or a list of lhs strings that all fire the action
   -- (so an F-key action can also bind its Shift variant — <F5> and <S-F5>).
+  --
+  -- setup() is a full reconfigure, so the keys installed by a PREVIOUS setup are
+  -- dropped first: re-running it with a different (or disabled) `mappings` must not
+  -- leave the old bindings behind.
+  for _, key in ipairs(installed_maps) do
+    pcall(nx.keymap.del, "n", key)
+  end
+  installed_maps = {}
   if M.config.mappings ~= false then
     for action, lhs in pairs(M.config.mappings) do
       if lhs and MAP_ACTIONS[action] then
         local keys = type(lhs) == "table" and lhs or { lhs }
         for _, key in ipairs(keys) do
           nx.keymap.set("n", key, MAP_ACTIONS[action], { desc = "nxvim-dap: " .. action })
+          installed_maps[#installed_maps + 1] = key
         end
       end
     end
   end
 
   -- Repaint breakpoint signs when a buffer opens (so signs set while it was closed
-  -- appear), and on the next tick after setup for already-open buffers.
+  -- appear), and on the next tick after setup for already-open buffers. Only the
+  -- ENTERED buffer is repainted — a full sweep on every BufEnter would re-mark every
+  -- file that has a breakpoint each time you switch buffers.
   if not autocmds_wired then
     local grp = nx.augroup.create("nxvim-dap", { clear = true })
     nx.autocmd.create("BufEnter", {
       group = grp,
-      callback = function()
-        breakpoints.render_all()
+      callback = function(ev)
+        breakpoints.render_buf(ev and ev.buf)
       end,
     })
     autocmds_wired = true

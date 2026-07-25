@@ -231,6 +231,68 @@ nx.test.describe("nxvim-dap.session execution control", function()
   end)
 end)
 
+nx.test.describe("nxvim-dap.session teardown", function()
+  local function started(handlers)
+    local hx = harness(handlers)
+    hx.session:start({ type = "mock", request = "launch", name = "t" })
+    hx.respond("initialize", { supportsConfigurationDoneRequest = true })
+    return hx
+  end
+
+  -- A `terminated` event ends the DEBUG session, but the adapter process is still
+  -- running — it exits when we disconnect. Without this the child leaks for the rest
+  -- of the editor session (every debug run leaving another orphan behind).
+  nx.test.it("disconnects + closes the transport after a terminated event", function()
+    local hx = started()
+    hx.adapter({ type = "event", event = "terminated" })
+    local dc = hx.last("disconnect")
+    nx.test.expect(dc).never.to_be_nil()
+    nx.test.expect(hx.handlers._closed).to_be_nil() -- not until the adapter acks
+    hx.respond("disconnect", {})
+    nx.test.expect(hx.handlers._closed).to_be_truthy()
+  end)
+
+  -- Every in-flight request must be settled when the session ends: a callback that is
+  -- never called leaks its caller's state forever (a watch stuck at "…", a configure
+  -- sequence that never completes).
+  nx.test.it("fails every in-flight request when the transport closes", function()
+    local hx = started()
+    local err = "pending"
+    hx.session:request("variables", { variablesReference = 1 }, function(e)
+      err = e
+    end)
+    hx.session:disconnect()
+    hx.respond("disconnect", {})
+    nx.test.expect(err).never.to_be("pending")
+    nx.test.expect(err).never.to_be_nil()
+    -- A request issued after the close fails loud instead of writing to a dead pipe.
+    local late = "pending"
+    hx.session:request("threads", nil, function(e)
+      late = e
+    end)
+    nx.test.expect(late).never.to_be_nil()
+    nx.test.expect(hx.last("threads")).to_be_nil()
+  end)
+
+  -- DAP `exited` reports the DEBUGGEE's exit code; `terminated` ends the session. An
+  -- adapter that outlives its debuggee (a restart-capable one) must not be torn down
+  -- on `exited` — but the code is remembered, so the terminated notice can report it.
+  nx.test.it("records an exited code without ending the session", function()
+    local body
+    local hx = started({
+      on_terminated = function(b)
+        body = b
+      end,
+    })
+    hx.adapter({ type = "event", event = "exited", body = { exitCode = 3 } })
+    nx.test.expect(body).to_be_nil()
+    nx.test.expect(hx.session.terminated).to_be_falsy()
+    hx.adapter({ type = "event", event = "terminated" })
+    nx.test.expect(body).never.to_be_nil()
+    nx.test.expect(body.exitCode).to_be(3)
+  end)
+end)
+
 nx.test.describe("nxvim-dap.session variable + expression editing", function()
   local function configured(handlers)
     local hx = harness(handlers)

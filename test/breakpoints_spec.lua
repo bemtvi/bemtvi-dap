@@ -21,6 +21,7 @@ end
 nx.test.describe("nxvim-dap breakpoints", function()
   nx.test.before_each(function()
     dap.setup({})
+    dap._sessions, dap._session = {}, nil
     breakpoints.clear_all()
   end)
 
@@ -63,6 +64,18 @@ nx.test.describe("nxvim-dap breakpoints", function()
     local bps = breakpoints.list()[signs.abspath(f)]
     nx.test.expect(#bps).to_be(1) -- not removed, upgraded
     nx.test.expect(bps[1].condition).to_be("x > 1")
+  end)
+
+  -- An upgrade MERGES: adding a condition to a log point must not drop its message
+  -- (clearing an attribute is `set_at_cursor`'s job — the edit path).
+  nx.test.it("merges an upgrade into the breakpoint's existing attributes", function(t)
+    local f = open_temp(t)
+    t:feed("2G")
+    breakpoints.toggle({ logMessage = "hit {i}" })
+    breakpoints.toggle({ condition = "i > 2" })
+    local bp = breakpoints.list()[signs.abspath(f)][1]
+    nx.test.expect(bp.logMessage).to_be("hit {i}")
+    nx.test.expect(bp.condition).to_be("i > 2")
   end)
 
   nx.test.it("set_at_cursor edits a breakpoint in place (keeps it, never toggles off)", function(t)
@@ -118,6 +131,56 @@ nx.test.describe("nxvim-dap breakpoints", function()
       n = n + 1
     end
     nx.test.expect(n).to_be(0)
+  end)
+
+  -- A breakpoint belongs to the PROJECT, not to one session: with several sessions live
+  -- (a client and a server, say) every one of them must learn about it. Pushing only to
+  -- the active session left the others debugging a stale breakpoint set.
+  nx.test.it("pushes a breakpoint change to every live session", function(t)
+    local f = open_temp(t)
+    local pushed = {}
+    local function fake(name)
+      return {
+        name = name,
+        initialized = true,
+        terminated = false,
+        set_breakpoints = function(_, path, bps)
+          pushed[name] = { path = path, count = #bps }
+        end,
+      }
+    end
+    local a, b = fake("A"), fake("B")
+    dap._sessions = { [1] = a, [2] = b }
+    dap._session = a
+
+    t:feed("2G")
+    dap.toggle_breakpoint()
+
+    nx.test.expect(pushed.A).never.to_be_nil()
+    nx.test.expect(pushed.B).never.to_be_nil()
+    nx.test.expect(pushed.B.path).to_be(signs.abspath(f))
+    nx.test.expect(pushed.B.count).to_be(1)
+
+    -- A session that never finished configuring (or has already ended) is skipped.
+    pushed = {}
+    b.initialized = false
+    a.terminated = true
+    dap.toggle_breakpoint()
+    nx.test.expect(pushed.A).to_be_nil()
+    nx.test.expect(pushed.B).to_be_nil()
+
+    dap._sessions, dap._session = {}, nil
+  end)
+
+  -- A breakpoint restored from the shada can point past the end of a file that shrank
+  -- since. The store keeps it (the file may grow back, and the adapter decides what is
+  -- verifiable) but the gutter can't paint a line that isn't there.
+  nx.test.it("skips gutter signs for lines past the end of the buffer", function(t)
+    local f = open_temp(t, "one\ntwo\n")
+    local path = signs.abspath(f)
+    breakpoints.restore({ [path] = { { line = 2 }, { line = 99 } } })
+    nx.test.expect(#breakpoints.list()[path]).to_be(2)
+    nx.test.expect(#bp_marks()).to_be(1)
   end)
 
   nx.test.it("restore() seeds the store (sorted) and repaints signs", function(t)
