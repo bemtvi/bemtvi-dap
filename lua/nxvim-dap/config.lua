@@ -82,34 +82,18 @@ function M.defaults()
   }
 end
 
--- Deep-ish merge: `over` wins, tables recurse, everything else replaces. Lists
+-- Deep merge: `over` wins, maps recurse, everything else replaces. Lists
 -- (`adapters`/`configurations` entries, `args`) replace wholesale — merging a list
--- positionally is never what a user means.
--- A non-empty sequence (array). An EMPTY table is treated as a map (so merging an
--- empty override — e.g. `setup({})` — keeps the base rather than wiping it).
-local function is_list(t)
-  return type(t) == "table" and t[1] ~= nil
-end
-
+-- positionally is never what a user means. An EMPTY override table counts as a map, so
+-- `setup({})` keeps the base rather than wiping it.
+--
+-- That is exactly `nx.tbl.deep_extend("force", …)`'s rule, so this is a named alias for
+-- it rather than a reimplementation.
 local function merge(base, over)
   if type(base) ~= "table" or type(over) ~= "table" then
     return over == nil and base or over
   end
-  if is_list(over) then
-    return over
-  end
-  local out = {}
-  for k, v in pairs(base) do
-    out[k] = v
-  end
-  for k, v in pairs(over) do
-    if type(v) == "table" and type(out[k]) == "table" then
-      out[k] = merge(out[k], v)
-    else
-      out[k] = v
-    end
-  end
-  return out
+  return nx.tbl.deep_extend("force", base, over)
 end
 
 M.merge = merge
