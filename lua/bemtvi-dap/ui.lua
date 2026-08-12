@@ -1,4 +1,4 @@
--- The debug sidebar: a read-only `nx.view` mounted in an edge dock showing, for the
+-- The debug sidebar: a read-only `btv.view` mounted in an edge dock showing, for the
 -- active session, the stopped thread's stack frames, the selected frame's scopes /
 -- variables, a list of WATCH expressions, the adapter's EXCEPTION breakpoint filters,
 -- and (when more than one session is live) a SESSIONS switcher. The view OWNS its
@@ -43,13 +43,13 @@ local function ensure_view()
   if view then
     return
   end
-  view = nx.view.create({ name = "nxvim-dap-ui", filetype = "nxdap-ui" })
-  ns = nx.ns.create("nxvim-dap-ui")
+  view = btv.view.create({ name = "bemtvi-dap-ui", filetype = "btvdap-ui" })
+  ns = btv.ns.create("bemtvi-dap-ui")
   view:on_select(function(_line, data)
     M._on_select(data)
   end)
   -- The view's backing buffer lands a tick after create; install the action keys then.
-  nx.on_next_tick(function()
+  btv.on_next_tick(function()
     M._install_keymaps()
   end)
 end
@@ -59,21 +59,21 @@ end
 -- remove / refresh on top.
 --
 -- The view's backing buffer lands a tick after create, so this waits for it — through
--- `nx.wait_for`, which polls BETWEEN ticks with a bounded try count. Re-arming
+-- `btv.wait_for`, which polls BETWEEN ticks with a bounded try count. Re-arming
 -- `on_next_tick` by hand would spin forever if the buffer never materialized.
 function M._install_keymaps()
   if keymaps_installed or not view then
     return
   end
   if not view:bufnr() then
-    nx.wait_for(function()
+    btv.wait_for(function()
       return view and view:bufnr()
-    end, { tries = 50, message = "nxvim-dap: the sidebar buffer never materialized" }):next(
+    end, { tries = 50, message = "bemtvi-dap: the sidebar buffer never materialized" }):next(
       function()
         M._install_keymaps()
       end,
       function(err)
-        nx.notify(tostring(err and err.message or err), 4)
+        btv.notify(tostring(err and err.message or err), 4)
       end
     )
     return
@@ -88,7 +88,7 @@ function M._install_keymaps()
   }
   for action, lhs in pairs(maps) do
     if lhs and actions[action] then
-      nx.keymap.set("n", lhs, actions[action], { buffer = buf, desc = "nxvim-dap: " .. action })
+      btv.keymap.set("n", lhs, actions[action], { buffer = buf, desc = "bemtvi-dap: " .. action })
     end
   end
   keymaps_installed = true
@@ -158,7 +158,7 @@ local function render_soon()
     return
   end
   render_queued = true
-  nx.schedule(function()
+  btv.schedule(function()
     render_queued = false
     M.render()
   end)
@@ -174,9 +174,9 @@ local function decor_when_ready(pending_marks)
     return
   end
   awaiting_buf = true
-  nx.wait_for(function()
+  btv.wait_for(function()
     return view and view:bufnr()
-  end, { tries = 50, message = "nxvim-dap: the sidebar buffer never materialized" }):next(
+  end, { tries = 50, message = "bemtvi-dap: the sidebar buffer never materialized" }):next(
     function()
       awaiting_buf = false
       if view and view:bufnr() then
@@ -185,7 +185,7 @@ local function decor_when_ready(pending_marks)
     end,
     function(err)
       awaiting_buf = false
-      nx.notify(tostring(err and err.message or err), 4)
+      btv.notify(tostring(err and err.message or err), 4)
     end
   )
 end
@@ -291,7 +291,7 @@ function M.add_watch(expr)
 end
 
 function M.prompt_add_watch()
-  nx.ui.input({ prompt = "Watch expression: " }):next(function(expr)
+  btv.ui.input({ prompt = "Watch expression: " }):next(function(expr)
     if expr and expr ~= "" then
       M.add_watch(expr)
     end
@@ -311,7 +311,7 @@ function M.remove_under_cursor()
     table.remove(state.watches, d.index)
     M._eval_watches()
   else
-    nx.notify("nxvim-dap: no watch under the cursor", 3)
+    btv.notify("bemtvi-dap: no watch under the cursor", 3)
   end
 end
 
@@ -331,7 +331,7 @@ end
 -- adapter only lets us set by expression) goes through `setExpression`.
 function M.edit_value()
   if not session or session.terminated then
-    return nx.notify("nxvim-dap: no active session", 3)
+    return btv.notify("bemtvi-dap: no active session", 3)
   end
   local line = view and view:line()
   local d = line and state.data[line]
@@ -341,7 +341,7 @@ function M.edit_value()
   local frame_id = state.current and state.current.id
   if d.kind == "var" then
     local var, parent = d.var, d.parent_ref
-    nx.ui
+    btv.ui
       .input({ prompt = ("Set %s = "):format(var.name), default = var.value or "" })
       :next(function(val)
         if val == nil then
@@ -360,15 +360,15 @@ function M.edit_value()
             end
           end)
         else
-          nx.notify("nxvim-dap: this adapter can't set " .. var.name, 3)
+          btv.notify("bemtvi-dap: this adapter can't set " .. var.name, 3)
         end
       end)
   elseif d.kind == "watch" then
     local w = d.var
     if not session.capabilities.supportsSetExpression then
-      return nx.notify("nxvim-dap: this adapter does not support setExpression", 3)
+      return btv.notify("bemtvi-dap: this adapter does not support setExpression", 3)
     end
-    nx.ui
+    btv.ui
       .input({ prompt = ("Set %s = "):format(w.name), default = w.value or "" })
       :next(function(val)
         if val == nil then
@@ -443,11 +443,11 @@ local function render_var(var, depth, parent_ref, lines, data, marks)
     col = name_col,
     end_row = row,
     end_col = name_col + #var.name,
-    hl_group = "NxDapUIVarName",
+    hl_group = "BtvDapUIVarName",
   }
   local val_col = #prefix + 3
   marks[#marks + 1] =
-    { line = row, col = val_col, end_row = row, end_col = #line, hl_group = "NxDapUIValue" }
+    { line = row, col = val_col, end_row = row, end_col = #line, hl_group = "BtvDapUIValue" }
   if state.expanded[ref] and state.children[ref] then
     for _, child in ipairs(state.children[ref]) do
       render_var(child, depth + 1, ref, lines, data, marks)
@@ -472,7 +472,7 @@ function M.render()
       col = 0,
       end_row = #lines - 1,
       end_col = #text,
-      hl_group = hl or "NxDapUIThread",
+      hl_group = hl or "BtvDapUIThread",
     }
   end
 
@@ -495,14 +495,14 @@ function M.render()
         col = 2 + #marker,
         end_row = row,
         end_col = 2 + #marker + #expr,
-        hl_group = "NxDapUIVarName",
+        hl_group = "BtvDapUIVarName",
       }
       marks[#marks + 1] = {
         line = row,
         col = #prefix + 3,
         end_row = row,
         end_col = #lines[#lines],
-        hl_group = item.error and "NxDapReplError" or "NxDapUIValue",
+        hl_group = item.error and "BtvDapReplError" or "BtvDapUIValue",
       }
       -- An expanded structured watch shows its children (real variables under the
       -- watch result's reference).
@@ -535,14 +535,14 @@ function M.render()
         col = 0,
         end_row = #lines - 1,
         end_col = #lines[#lines],
-        hl_group = cur and "NxDapUIFrameCurrent" or "NxDapUIFrame",
+        hl_group = cur and "BtvDapUIFrameCurrent" or "BtvDapUIFrame",
       }
     end
 
     blank()
     header("SCOPES")
     for _, scope in ipairs(state.scopes) do
-      header("  " .. scope.name, "NxDapUIScope")
+      header("  " .. scope.name, "BtvDapUIScope")
       for _, var in ipairs(scope.variables or {}) do
         render_var(var, 1, scope.variablesReference, lines, data, marks)
       end
@@ -565,7 +565,7 @@ function M.render()
         col = 2,
         end_row = #lines - 1,
         end_col = #lines[#lines],
-        hl_group = on and "NxDapUIFrameCurrent" or "NxDapUIFrame",
+        hl_group = on and "BtvDapUIFrameCurrent" or "BtvDapUIFrame",
       }
     end
   end
@@ -591,7 +591,7 @@ function M.render()
           col = 0,
           end_row = #lines - 1,
           end_col = #lines[#lines],
-          hl_group = (s == active) and "NxDapUIFrameCurrent" or "NxDapUIFrame",
+          hl_group = (s == active) and "BtvDapUIFrameCurrent" or "BtvDapUIFrame",
         }
       end
     end

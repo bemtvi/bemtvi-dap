@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# A minimal Debug Adapter Protocol server for the nxvim-dap demo. It speaks the real
+# A minimal Debug Adapter Protocol server for the bemtvi-dap demo. It speaks the real
 # Content-Length-framed wire over stdio (the exact path a real adapter uses through
-# nx.process), but its "execution" is scripted: it reports one stopped frame at line 2
+# btv.process), but its "execution" is scripted: it reports one stopped frame at line 2
 # of the launched `program`, single steps to line 3, and terminates on continue. Enough
 # to exercise the whole client: handshake, breakpoints, the stopped drill-down
 # (threads/stackTrace/scopes/variables), stepping, evaluate, watches, variable editing

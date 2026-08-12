@@ -1,10 +1,10 @@
 -- The Debug Adapter Protocol wire codec: `Content-Length: N\r\n\r\n<N bytes JSON>`,
--- the exact framing LSP uses. The transport (`nx.process`) hands us RAW, un-split
+-- the exact framing LSP uses. The transport (`btv.process`) hands us RAW, un-split
 -- byte chunks — a single read can carry half a header, several whole messages, or a
 -- message split mid-body — so the decoder is a stateful accumulator that emits one
 -- decoded table per complete frame and buffers the partial tail for the next chunk.
 --
--- (This is why nxvim-dap needs the duplex `nx.process` and not `nx.run_stream`: the
+-- (This is why bemtvi-dap needs the duplex `btv.process` and not `btv.run_stream`: the
 -- latter newline-splits stdout, which shreds a frame whose JSON body or `\r\n\r\n`
 -- separator the split falls inside.)
 
@@ -12,7 +12,7 @@ local M = {}
 
 -- Frame a DAP message table into a wire string ready for `handle:write`.
 function M.encode(msg)
-  local body = nx.json.encode(msg)
+  local body = btv.json.encode(msg)
   return ("Content-Length: %d\r\n\r\n%s"):format(#body, body)
 end
 
@@ -70,7 +70,7 @@ function M.decoder(on_message, on_error)
       local header = buf:sub(pos, hstart - 1)
       local len = content_length(header)
       if not len then
-        fail("nxvim-dap: missing Content-Length in DAP header: " .. header)
+        fail("bemtvi-dap: missing Content-Length in DAP header: " .. header)
         pos = #buf + 1 -- can't trust the stream position; resync from empty
         break
       end
@@ -79,12 +79,12 @@ function M.decoder(on_message, on_error)
         need = (body_start - pos) + len -- wait for the rest of the body
         break
       end
-      local ok, decoded = pcall(nx.json.decode, buf:sub(body_start, body_start + len - 1))
+      local ok, decoded = pcall(btv.json.decode, buf:sub(body_start, body_start + len - 1))
       pos = body_start + len
       if ok then
         ready[#ready + 1] = decoded
       else
-        fail("nxvim-dap: undecodable DAP body: " .. tostring(decoded))
+        fail("bemtvi-dap: undecodable DAP body: " .. tostring(decoded))
       end
     end
 

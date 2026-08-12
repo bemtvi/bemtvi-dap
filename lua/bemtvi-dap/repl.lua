@@ -1,8 +1,8 @@
--- The REPL / debug console: a bottom-dock `nx.view` that collects the adapter's
+-- The REPL / debug console: a bottom-dock `btv.view` that collects the adapter's
 -- `output` events and the results of expressions you evaluate in the stopped frame.
--- A view is read-only, so input is entered through an `nx.ui.input` prompt (opened
+-- A view is read-only, so input is entered through an `btv.ui.input` prompt (opened
 -- with `<CR>`/`i` on the view, or `:DapEval`) rather than typed into the buffer —
--- the same pattern nxvim-tree uses for rename/create.
+-- the same pattern bemtvi-tree uses for rename/create.
 
 local M = {}
 
@@ -23,8 +23,8 @@ local function ensure_view()
   if view then
     return
   end
-  view = nx.view.create({ name = "nxvim-dap-repl", filetype = "nxdap-repl" })
-  ns = nx.ns.create("nxvim-dap-repl")
+  view = btv.view.create({ name = "bemtvi-dap-repl", filetype = "btvdap-repl" })
+  ns = btv.ns.create("bemtvi-dap-repl")
   view:on_select(function()
     M.prompt()
   end)
@@ -58,7 +58,7 @@ end
 -- events shouldn't tail (and steal focus) while you're editing elsewhere.
 local function is_focused()
   local win = view and view:winid()
-  return win ~= nil and win == nx.win.current()
+  return win ~= nil and win == btv.win.current()
 end
 
 function M.open()
@@ -97,16 +97,16 @@ local function decor_when_ready()
     return
   end
   awaiting_buf = true
-  nx.wait_for(function()
+  btv.wait_for(function()
     return view and view:bufnr()
-  end, { tries = 50, message = "nxvim-dap: the REPL buffer never materialized" }):next(function()
+  end, { tries = 50, message = "bemtvi-dap: the REPL buffer never materialized" }):next(function()
     awaiting_buf = false
     if view and view:bufnr() then
       view:set_decor(ns, marks)
     end
   end, function(err)
     awaiting_buf = false
-    nx.notify(tostring(err and err.message or err), 4)
+    btv.notify(tostring(err and err.message or err), 4)
   end)
 end
 
@@ -190,7 +190,7 @@ local function render_soon()
     return
   end
   render_queued = true
-  nx.schedule(function()
+  btv.schedule(function()
     render_queued = false
     M.render()
   end)
@@ -239,7 +239,7 @@ end
 
 -- Echo a one-off informational line (session lifecycle).
 function M.info(text)
-  push(text, "NxDapUIDecoration")
+  push(text, "BtvDapUIDecoration")
   M.render()
 end
 
@@ -248,10 +248,10 @@ function M.eval(expr)
   if expr == nil or expr == "" then
     return
   end
-  push("> " .. expr, "NxDapReplPrompt")
+  push("> " .. expr, "BtvDapReplPrompt")
   M.render()
   if not session then
-    push("  (no active session)", "NxDapReplError")
+    push("  (no active session)", "BtvDapReplError")
     M.render()
     return
   end
@@ -259,7 +259,7 @@ function M.eval(expr)
   session:evaluate(expr, frame_id, "repl", function(err, body)
     if err then
       for _, l in ipairs(vim.split(tostring(err.message or ""), "\n")) do
-        push("  " .. l, "NxDapReplError")
+        push("  " .. l, "BtvDapReplError")
       end
     else
       for _, l in ipairs(vim.split((body and body.result) or "", "\n")) do
@@ -270,7 +270,7 @@ function M.eval(expr)
   end)
 end
 
--- Map the adapter's DAP `CompletionItem`s to the `nx.ui.input` wildmenu shape
+-- Map the adapter's DAP `CompletionItem`s to the `btv.ui.input` wildmenu shape
 -- (`{ label, insert, doc, start?, length? }`). `text` defaults to `label` (DAP spec),
 -- `detail` (when the adapter sends one) becomes the side-docs body, headed by the
 -- item's `type` (`function`, `variable`, …) so the pane reads like a tiny signature
@@ -309,7 +309,7 @@ end
 -- — that resolves to the wildmenu candidates (empty when there's no session or the
 -- adapter has no `completions` support, which simply opens no menu).
 local function repl_complete(line, col)
-  return nx.promise.new(function(resolve)
+  return btv.promise.new(function(resolve)
     if not session then
       return resolve({})
     end
@@ -334,10 +334,10 @@ end
 -- vs `""` for an empty `<CR>`) closes the loop. An empty `<CR>` re-prompts without
 -- evaluating (`M.eval` no-ops on "").
 function M.prompt()
-  nx.ui
+  btv.ui
     .input({
       prompt = "dap> ",
-      history = "nxvim-dap-repl",
+      history = "bemtvi-dap-repl",
       complete = repl_complete,
     })
     :next(function(expr)

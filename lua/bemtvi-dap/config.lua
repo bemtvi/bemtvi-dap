@@ -1,4 +1,4 @@
--- nxvim-dap configuration: the defaults, the adapter/configuration registries, and a
+-- bemtvi-dap configuration: the defaults, the adapter/configuration registries, and a
 -- validated merge. Mirrors nvim-dap's two-table model so a ported debug setup reads
 -- the same:
 --
@@ -7,9 +7,9 @@
 --
 -- An adapter is one of:
 --   * `{ type = "executable", command, args, env, cwd }` — a duplex child over
---     `nx.process` (the adapter speaks DAP on its own stdio).
+--     `btv.process` (the adapter speaks DAP on its own stdio).
 --   * `{ type = "server", host, port, executable = { command, args, … } }` — a TCP
---     connection over `nx.socket`; the optional `executable` is launched first (it
+--     connection over `btv.socket`; the optional `executable` is launched first (it
 --     opens the port) and the client connects to `host:port` (default 127.0.0.1),
 --     retrying while it comes up. The nvim-dap "server" adapter.
 --   * `function(callback, config)` — a resolver producing one of the above
@@ -23,11 +23,11 @@ function M.defaults()
   return {
     -- UI / sign appearance.
     signs = {
-      breakpoint = { text = "●", hl = "NxDapBreakpoint" },
-      breakpoint_condition = { text = "◆", hl = "NxDapBreakpointCondition" },
-      breakpoint_rejected = { text = "○", hl = "NxDapBreakpointRejected" },
-      log_point = { text = "◇", hl = "NxDapLogPoint" },
-      stopped = { text = "▶", hl = "NxDapStopped", line_hl = "NxDapStoppedLine" },
+      breakpoint = { text = "●", hl = "BtvDapBreakpoint" },
+      breakpoint_condition = { text = "◆", hl = "BtvDapBreakpointCondition" },
+      breakpoint_rejected = { text = "○", hl = "BtvDapBreakpointRejected" },
+      log_point = { text = "◇", hl = "BtvDapLogPoint" },
+      stopped = { text = "▶", hl = "BtvDapStopped", line_hl = "BtvDapStoppedLine" },
     },
     -- The sidebar dock (threads / stack frames / scopes / variables / watches /
     -- exception filters / sessions).
@@ -87,18 +87,18 @@ end
 -- positionally is never what a user means. An EMPTY override table counts as a map, so
 -- `setup({})` keeps the base rather than wiping it.
 --
--- That is exactly `nx.tbl.deep_extend("force", …)`'s rule, so this is a named alias for
+-- That is exactly `btv.tbl.deep_extend("force", …)`'s rule, so this is a named alias for
 -- it rather than a reimplementation.
 local function merge(base, over)
   if type(base) ~= "table" or type(over) ~= "table" then
     return over == nil and base or over
   end
-  return nx.tbl.deep_extend("force", base, over)
+  return btv.tbl.deep_extend("force", base, over)
 end
 
 M.merge = merge
 
--- Validate an adapter spec, failing LOUD on anything nxvim-dap can't honor (the
+-- Validate an adapter spec, failing LOUD on anything bemtvi-dap can't honor (the
 -- no-silent-stubs discipline — a "server" adapter must error at config time, not
 -- silently never connect).
 function M.validate_adapter(adapter, type_name)
@@ -107,27 +107,27 @@ function M.validate_adapter(adapter, type_name)
   end
   if type(adapter) ~= "table" then
     error(
-      ("nxvim-dap: adapter %q must be a table or function, got %s"):format(type_name, type(adapter))
+      ("bemtvi-dap: adapter %q must be a table or function, got %s"):format(type_name, type(adapter))
     )
   end
   local kind = adapter.type or "executable"
   if kind == "executable" then
     if type(adapter.command) ~= "string" or adapter.command == "" then
-      error(("nxvim-dap: executable adapter %q needs a string `command`"):format(type_name))
+      error(("bemtvi-dap: executable adapter %q needs a string `command`"):format(type_name))
     end
   elseif kind == "server" then
     if type(adapter.port) ~= "number" then
-      error(("nxvim-dap: server adapter %q needs a numeric `port`"):format(type_name))
+      error(("bemtvi-dap: server adapter %q needs a numeric `port`"):format(type_name))
     end
     if adapter.executable ~= nil then
       if type(adapter.executable) ~= "table" or type(adapter.executable.command) ~= "string" then
         error(
-          ("nxvim-dap: server adapter %q `executable` needs a string `command`"):format(type_name)
+          ("bemtvi-dap: server adapter %q `executable` needs a string `command`"):format(type_name)
         )
       end
     end
   else
-    error(("nxvim-dap: adapter %q has unknown type=%q"):format(type_name, kind))
+    error(("bemtvi-dap: adapter %q has unknown type=%q"):format(type_name, kind))
   end
 end
 
@@ -135,20 +135,20 @@ end
 -- validate_configuration(cfg)`), erroring on a missing required field.
 function M.validate_configuration(cfg)
   if type(cfg) ~= "table" then
-    error("nxvim-dap: a configuration must be a table")
+    error("bemtvi-dap: a configuration must be a table")
   end
   if type(cfg.type) ~= "string" then
-    error("nxvim-dap: a configuration needs a string `type` (the adapter key)")
+    error("bemtvi-dap: a configuration needs a string `type` (the adapter key)")
   end
   if cfg.request ~= "launch" and cfg.request ~= "attach" then
     error(
-      ("nxvim-dap: configuration %q needs request='launch' or 'attach'"):format(
+      ("bemtvi-dap: configuration %q needs request='launch' or 'attach'"):format(
         cfg.name or cfg.type
       )
     )
   end
   if type(cfg.name) ~= "string" then
-    error("nxvim-dap: a configuration needs a string `name`")
+    error("bemtvi-dap: a configuration needs a string `name`")
   end
   return cfg
 end

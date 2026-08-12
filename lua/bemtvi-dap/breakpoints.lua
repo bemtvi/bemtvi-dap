@@ -4,7 +4,7 @@
 -- session. A session's `_configure` reads the whole store through `M.list` to seed
 -- breakpoints at launch.
 
-local signs = require("nxvim-dap.signs")
+local signs = require("bemtvi-dap.signs")
 
 local M = {}
 
@@ -37,12 +37,12 @@ end
 -- The current buffer's absolute path + cursor line (1-based), or nil if the buffer
 -- has no file.
 local function here()
-  local bufnr = nx.buf.current()
-  local name = nx.buf.name(bufnr)
+  local bufnr = btv.buf.current()
+  local name = btv.buf.name(bufnr)
   if not name or name == "" then
     return nil
   end
-  local cur = nx.cursor.get(nx.win.current())
+  local cur = btv.cursor.get(btv.win.current())
   local line = (cur and (cur.row or cur[1])) or 1
   return signs.abspath(name), line
 end
@@ -65,7 +65,7 @@ function M.toggle(opts)
   opts = opts or {}
   local path, line = here()
   if not path then
-    nx.notify("nxvim-dap: no file in the current buffer", 3)
+    btv.notify("bemtvi-dap: no file in the current buffer", 3)
     return
   end
   local bps = M.store[path] or {}
@@ -123,7 +123,7 @@ function M.set_at_cursor(fields)
   fields = fields or {}
   local path, line = here()
   if not path then
-    nx.notify("nxvim-dap: no file in the current buffer", 3)
+    btv.notify("bemtvi-dap: no file in the current buffer", 3)
     return
   end
   local bps = M.store[path] or {}
@@ -222,11 +222,11 @@ end
 -- breakpoint was set carries no marks until it comes back, and repainting just it costs
 -- nothing next to sweeping every file in the store on every buffer switch.
 function M.render_buf(bufnr)
-  bufnr = bufnr or nx.buf.current()
-  if not bufnr or not nx.buf.is_valid(bufnr) then
+  bufnr = bufnr or btv.buf.current()
+  if not bufnr or not btv.buf.is_valid(bufnr) then
     return
   end
-  local name = nx.buf.name(bufnr)
+  local name = btv.buf.name(bufnr)
   if not name or name == "" then
     return
   end

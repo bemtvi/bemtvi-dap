@@ -1,5 +1,5 @@
 -- End-to-end: the whole client against a REAL debug adapter subprocess (a scripted
--- DAP server, test/support/mock_adapter.py) spoken over `nx.process` — the same
+-- DAP server, test/support/mock_adapter.py) spoken over `btv.process` — the same
 -- duplex-stdio path a real adapter uses. This proves the integration the fake-
 -- transport session_spec can't: framing over a live pipe, the launch handshake,
 -- breakpoint sync, the stopped drill-down, stepping, evaluate, and teardown.
@@ -8,7 +8,7 @@
 -- this is the only spec that won't run; the protocol logic is covered hermetically
 -- by rpc_spec / session_spec.
 
-local dap = require("nxvim-dap")
+local dap = require("bemtvi-dap")
 
 -- The plugin root: the runner puts `<root>/lua/?.lua` first on package.path (the
 -- runtimepath drives module search), so the mock adapter resolves beneath it.
@@ -20,7 +20,7 @@ local MOCK = ROOT .. "/test/support/mock_adapter.py"
 local function setup_session(t, prog)
   dap.setup({ jump_to_stopped = true })
   dap.adapters.mock = { command = "python3", args = { MOCK } }
-  dap.configurations.nxdapmock = {
+  dap.configurations.btvdapmock = {
     { type = "mock", request = "launch", name = "mock launch", program = prog },
   }
   dap.run({ type = "mock", request = "launch", name = "mock launch", program = prog })
@@ -36,37 +36,37 @@ local function wait_stopped(t, line)
   end, { tries = 300, interval = 20, message = "session did not stop at line " .. tostring(line) })
 end
 
-nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function()
+btv.test.describe("bemtvi-dap end-to-end (real adapter over btv.process)", function()
   -- The --test-plugin runner doesn't source `plugin/`, so set the plugin up first
   -- (signs/ui/repl need their config) before any breakpoint toggle.
-  nx.test.before_each(function()
+  btv.test.before_each(function()
     dap.setup({ jump_to_stopped = true })
   end)
 
-  nx.test.it("launches, hits a breakpoint, steps, evaluates, and terminates", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("launches, hits a breakpoint, steps, evaluates, and terminates", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/prog.py"
-    nx.await(nx.fs.write(prog, "a = 1\nb = 2\nc = 3\n"))
+    btv.await(btv.fs.write(prog, "a = 1\nb = 2\nc = 3\n"))
     t:cmd("edit " .. prog)
 
     -- Toggle a breakpoint on line 2.
     t:feed("2G")
     dap.toggle_breakpoint()
-    nx.test.expect(dap.breakpoints.list()[dap.signs.abspath(prog)]).never.to_be_nil()
-    nx.test.expect(dap.breakpoints.list()[dap.signs.abspath(prog)][1].line).to_be(2)
+    btv.test.expect(dap.breakpoints.list()[dap.signs.abspath(prog)]).never.to_be_nil()
+    btv.test.expect(dap.breakpoints.list()[dap.signs.abspath(prog)][1].line).to_be(2)
 
     -- Launch the adapter; it stops at line 2.
     setup_session(t, prog)
     wait_stopped(t, 2)
 
     local s = dap.session()
-    nx.test.expect(s.current_frame.name).to_be("main")
-    nx.test.expect(s.capabilities.supportsConfigurationDoneRequest).to_be_truthy()
+    btv.test.expect(s.current_frame.name).to_be("main")
+    btv.test.expect(s.capabilities.supportsConfigurationDoneRequest).to_be_truthy()
 
     -- The stopped marker landed in the source buffer (a sign in its namespace).
-    local stopped_ns = nx.ns.create("nxvim-dap-stopped")
-    local marks = nx.buf.extmarks(dap.signs.path_bufnr(prog), stopped_ns, 0, -1)
-    nx.test.expect(#marks).never.to_be(0)
+    local stopped_ns = btv.ns.create("bemtvi-dap-stopped")
+    local marks = btv.buf.extmarks(dap.signs.path_bufnr(prog), stopped_ns, 0, -1)
+    btv.test.expect(#marks).never.to_be(0)
 
     -- Evaluate an expression in the stopped frame over the live adapter.
     local evaluated
@@ -76,12 +76,12 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     t:wait_for(function()
       return evaluated
     end, { tries = 200, interval = 20, message = "evaluate did not return" })
-    nx.test.expect(evaluated).to_be("1+1 => ok")
+    btv.test.expect(evaluated).to_be("1+1 => ok")
 
     -- Step over → the adapter stops again at line 3.
     dap.step_over()
     wait_stopped(t, 3)
-    nx.test.expect(dap.session().current_frame.line).to_be(3)
+    btv.test.expect(dap.session().current_frame.line).to_be(3)
 
     -- Continue → the adapter terminates; the plugin tears the session down.
     dap.continue()
@@ -90,14 +90,14 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
 
     -- The stopped marker is cleared on teardown.
-    local cleared = nx.buf.extmarks(dap.signs.path_bufnr(prog), stopped_ns, 0, -1)
-    nx.test.expect(#cleared).to_be(0)
+    local cleared = btv.buf.extmarks(dap.signs.path_bufnr(prog), stopped_ns, 0, -1)
+    btv.test.expect(#cleared).to_be(0)
   end)
 
-  nx.test.it("resolves scopes and variables from the live adapter", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("resolves scopes and variables from the live adapter", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/prog2.py"
-    nx.await(nx.fs.write(prog, "x = 1\ny = 2\n"))
+    btv.await(btv.fs.write(prog, "x = 1\ny = 2\n"))
     t:cmd("edit " .. prog)
 
     setup_session(t, prog)
@@ -110,10 +110,10 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     t:wait_for(function()
       return scopes
     end, { tries = 200, interval = 20, message = "scopes did not resolve" })
-    nx.test.expect(#scopes).to_be(1)
-    nx.test.expect(scopes[1].name).to_be("Locals")
-    nx.test.expect(scopes[1].variables[1].name).to_be("x")
-    nx.test.expect(scopes[1].variables[1].value).to_be("42")
+    btv.test.expect(#scopes).to_be(1)
+    btv.test.expect(scopes[1].name).to_be("Locals")
+    btv.test.expect(scopes[1].variables[1].name).to_be("x")
+    btv.test.expect(scopes[1].variables[1].value).to_be("42")
 
     dap.terminate()
     t:wait_for(function()
@@ -121,10 +121,10 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
   end)
 
-  nx.test.it("expands ${file} in the launch configuration before launch", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("expands ${file} in the launch configuration before launch", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/expand_me.py"
-    nx.await(nx.fs.write(prog, "x = 1\n"))
+    btv.await(btv.fs.write(prog, "x = 1\n"))
     t:cmd("edit " .. prog)
 
     dap.setup({})
@@ -135,9 +135,9 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
 
     local abs = dap.signs.abspath(prog)
     -- The session stored the EXPANDED config (no literal ${file} left).
-    nx.test.expect(dap.session().config.program).to_be(abs)
+    btv.test.expect(dap.session().config.program).to_be(abs)
     -- And the adapter received it: the mock echoes `program` as the frame's source path.
-    nx.test.expect(dap.session().current_frame.source.path).to_be(abs)
+    btv.test.expect(dap.session().current_frame.source.path).to_be(abs)
 
     dap.terminate()
     t:wait_for(function()
@@ -145,10 +145,10 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
   end)
 
-  nx.test.it("prompts for an ${input:…} and launches with the answer", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("prompts for an ${input:…} and launches with the answer", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/in.py"
-    nx.await(nx.fs.write(prog, "x = 1\n"))
+    btv.await(btv.fs.write(prog, "x = 1\n"))
 
     dap.setup({})
     dap.adapters.mock = { command = "python3", args = { MOCK } }
@@ -163,10 +163,10 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     t:feed(prog .. "<CR>") -- answer the prompt with the real path
     wait_stopped(t, 2)
 
-    nx.test.expect(dap.session().config.program).to_be(prog)
-    nx.test.expect(dap.session().config.inputs).to_be_nil() -- a UI-only field, stripped
+    btv.test.expect(dap.session().config.program).to_be(prog)
+    btv.test.expect(dap.session().config.inputs).to_be_nil() -- a UI-only field, stripped
     -- The adapter received the resolved path (echoed as the frame's source).
-    nx.test.expect(dap.session().current_frame.source.path).to_be(prog)
+    btv.test.expect(dap.session().current_frame.source.path).to_be(prog)
 
     dap.terminate()
     t:wait_for(function()
@@ -174,10 +174,10 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
   end)
 
-  nx.test.it("resolves a ${command:…} from a registered command at launch", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("resolves a ${command:…} from a registered command at launch", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/cmd.py"
-    nx.await(nx.fs.write(prog, "x = 1\n"))
+    btv.await(btv.fs.write(prog, "x = 1\n"))
 
     dap.setup({})
     dap.adapters.mock = { command = "python3", args = { MOCK } }
@@ -191,8 +191,8 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
       program = "${command:pickProgram}",
     })
     wait_stopped(t, 2)
-    nx.test.expect(dap.session().config.program).to_be(prog)
-    nx.test.expect(dap.session().current_frame.source.path).to_be(prog)
+    btv.test.expect(dap.session().config.program).to_be(prog)
+    btv.test.expect(dap.session().current_frame.source.path).to_be(prog)
 
     dap.terminate()
     t:wait_for(function()
@@ -200,16 +200,16 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
   end)
 
-  nx.test.it("sets a variable's value over the live adapter (setVariable)", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("sets a variable's value over the live adapter (setVariable)", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/v.py"
-    nx.await(nx.fs.write(prog, "x = 1\n"))
+    btv.await(btv.fs.write(prog, "x = 1\n"))
     t:cmd("edit " .. prog)
 
     setup_session(t, prog)
     wait_stopped(t, 2)
     local s = dap.session()
-    nx.test.expect(s.capabilities.supportsSetVariable).to_be_truthy()
+    btv.test.expect(s.capabilities.supportsSetVariable).to_be_truthy()
 
     local scopes
     s:frame_scopes(s.current_frame.id, function(sc)
@@ -227,7 +227,7 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     t:wait_for(function()
       return set_err ~= "pending"
     end, { tries = 200, interval = 20, message = "setVariable did not reply" })
-    nx.test.expect(set_err).to_be_nil()
+    btv.test.expect(set_err).to_be_nil()
 
     local scopes2
     s:frame_scopes(s.current_frame.id, function(sc)
@@ -242,7 +242,7 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
         val = v.value
       end
     end
-    nx.test.expect(val).to_be("99")
+    btv.test.expect(val).to_be("99")
 
     dap.terminate()
     t:wait_for(function()
@@ -250,10 +250,10 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
   end)
 
-  nx.test.it("renders watches + exception filters in the live sidebar", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("renders watches + exception filters in the live sidebar", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/w.py"
-    nx.await(nx.fs.write(prog, "x = 1\ny = 2\n"))
+    btv.await(btv.fs.write(prog, "x = 1\ny = 2\n"))
     t:cmd("edit " .. prog)
 
     setup_session(t, prog)
@@ -269,7 +269,7 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
       if not buf then
         return ""
       end
-      return table.concat(nx.buf.lines(buf, 0, -1, false), "\n")
+      return table.concat(btv.buf.lines(buf, 0, -1, false), "\n")
     end
     t:wait_for(function()
       local text = sidebar_text()
@@ -277,9 +277,9 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "watch value did not render" })
 
     local text = sidebar_text()
-    nx.test.expect(text:find("WATCHES", 1, true)).never.to_be_nil()
-    nx.test.expect(text:find("[x] Uncaught Exceptions", 1, true)).never.to_be_nil()
-    nx.test.expect(text:find("[ ] Raised Exceptions", 1, true)).never.to_be_nil()
+    btv.test.expect(text:find("WATCHES", 1, true)).never.to_be_nil()
+    btv.test.expect(text:find("[x] Uncaught Exceptions", 1, true)).never.to_be_nil()
+    btv.test.expect(text:find("[ ] Raised Exceptions", 1, true)).never.to_be_nil()
 
     dap.clear_watches()
     dap.terminate()
@@ -288,10 +288,10 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
   end)
 
-  nx.test.it("restarts the active session in place (restart request)", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("restarts the active session in place (restart request)", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/r.py"
-    nx.await(nx.fs.write(prog, "a = 1\nb = 2\nc = 3\n"))
+    btv.await(btv.fs.write(prog, "a = 1\nb = 2\nc = 3\n"))
     t:cmd("edit " .. prog)
 
     setup_session(t, prog)
@@ -300,7 +300,7 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     wait_stopped(t, 3)
 
     local s = dap.session()
-    nx.test.expect(s.capabilities.supportsRestartRequest).to_be_truthy()
+    btv.test.expect(s.capabilities.supportsRestartRequest).to_be_truthy()
     dap.restart()
     -- Same session object, re-stopped back at line 2 (the mock resets on restart).
     t:wait_for(function()
@@ -316,12 +316,12 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
   end)
 
-  nx.test.it(
+  btv.test.it(
     "restarts via terminate + relaunch when the restart request is unsupported",
     function(t)
-      local dir = nx.test.tempdir()
+      local dir = btv.test.tempdir()
       local prog = dir .. "/nr.py"
-      nx.await(nx.fs.write(prog, "a = 1\nb = 2\nc = 3\n"))
+      btv.await(btv.fs.write(prog, "a = 1\nb = 2\nc = 3\n"))
       t:cmd("edit " .. prog)
 
       dap.setup({})
@@ -329,7 +329,7 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
       dap.run({ type = "norestart", request = "launch", name = "no-restart", program = prog })
       wait_stopped(t, 2)
       local first = dap.session()
-      nx.test.expect(first.capabilities.supportsRestartRequest).to_be(false)
+      btv.test.expect(first.capabilities.supportsRestartRequest).to_be(false)
 
       dap.restart()
       -- A brand-new session replaces the old one (different object), stopped at line 2.
@@ -341,7 +341,7 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
           and s.current_frame
           and s.current_frame.line == 2
       end, { tries = 500, interval = 20, message = "session did not relaunch" })
-      nx.test.expect(#dap.sessions()).to_be(1)
+      btv.test.expect(#dap.sessions()).to_be(1)
 
       dap.terminate()
       t:wait_for(function()
@@ -350,17 +350,17 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end
   )
 
-  nx.test.it("runs two concurrent sessions and switches the active one", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("runs two concurrent sessions and switches the active one", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/c.py"
-    nx.await(nx.fs.write(prog, "x = 1\ny = 2\n"))
+    btv.await(btv.fs.write(prog, "x = 1\ny = 2\n"))
     t:cmd("edit " .. prog)
 
     dap.setup({})
     dap.adapters.mock = { command = "python3", args = { MOCK } }
     dap.run({ type = "mock", request = "launch", name = "A", program = prog })
     dap.run({ type = "mock", request = "launch", name = "B", program = prog })
-    nx.test.expect(#dap.sessions()).to_be(2)
+    btv.test.expect(#dap.sessions()).to_be(2)
 
     t:wait_for(function()
       local n = 0
@@ -375,7 +375,7 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     -- The most-recently-stopped session is active; switch to the other.
     local list = dap.sessions()
     dap.set_active_session(list[2])
-    nx.test.expect(dap.session()).to_be(list[2])
+    btv.test.expect(dap.session()).to_be(list[2])
 
     dap.terminate_all()
     t:wait_for(function()
@@ -383,10 +383,10 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 400, interval = 20, message = "sessions did not all terminate" })
   end)
 
-  nx.test.it("reflects + toggles exception breakpoint filters over the live adapter", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("reflects + toggles exception breakpoint filters over the live adapter", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/e.py"
-    nx.await(nx.fs.write(prog, "x = 1\n"))
+    btv.await(btv.fs.write(prog, "x = 1\n"))
     t:cmd("edit " .. prog)
 
     dap.exception_filters = nil -- start from the adapter defaults
@@ -394,12 +394,12 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     wait_stopped(t, 2)
 
     -- The adapter advertises raised (off by default) + uncaught (on by default).
-    nx.test.expect(dap.is_exception_selected("uncaught")).to_be(true)
-    nx.test.expect(dap.is_exception_selected("raised")).to_be(false)
+    btv.test.expect(dap.is_exception_selected("uncaught")).to_be(true)
+    btv.test.expect(dap.is_exception_selected("raised")).to_be(false)
 
     -- Toggle raised on; the selection updates and the live set round-trips.
     dap.toggle_exception_filter("raised")
-    nx.test.expect(dap.is_exception_selected("raised")).to_be(true)
+    btv.test.expect(dap.is_exception_selected("raised")).to_be(true)
 
     local err = "pending"
     dap.session():set_exception_breakpoints({ "raised", "uncaught" }, function(e)
@@ -408,7 +408,7 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     t:wait_for(function()
       return err ~= "pending"
     end, { tries = 200, interval = 20, message = "setExceptionBreakpoints did not reply" })
-    nx.test.expect(err).to_be_nil()
+    btv.test.expect(err).to_be_nil()
 
     dap.exception_filters = nil
     dap.terminate()
@@ -417,16 +417,16 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     end, { tries = 300, interval = 20, message = "session did not terminate" })
   end)
 
-  nx.test.it("connects to a server (TCP) adapter and runs the same flow", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("connects to a server (TCP) adapter and runs the same flow", function(t)
+    local dir = btv.test.tempdir()
     local prog = dir .. "/prog3.py"
-    nx.await(nx.fs.write(prog, "x = 1\ny = 2\n"))
+    btv.await(btv.fs.write(prog, "x = 1\ny = 2\n"))
     local port_file = dir .. "/port"
 
     -- Launch the mock in server mode: it binds an ephemeral TCP port and writes it to
     -- port_file. (The test owns the process; the adapter config has no `executable`,
     -- so the plugin just connects.)
-    local server = nx.process.open({
+    local server = btv.process.open({
       cmd = "python3",
       args = { MOCK, "--listen", "--port-file", port_file },
     })
@@ -435,23 +435,23 @@ nx.test.describe("nxvim-dap end-to-end (real adapter over nx.process)", function
     local port
     for _ = 1, 200 do
       local ok, data = pcall(function()
-        return nx.await(nx.fs.read_text(port_file))
+        return btv.await(btv.fs.read_text(port_file))
       end)
       if ok and data and tonumber(data) then
         port = tonumber(data)
         break
       end
-      nx.await(nx.promise.delay(20))
+      btv.await(btv.promise.delay(20))
     end
-    nx.test.expect(port).never.to_be_nil()
+    btv.test.expect(port).never.to_be_nil()
 
     t:cmd("edit " .. prog)
     dap.adapters.srv = { type = "server", host = "127.0.0.1", port = port }
     dap.run({ type = "srv", request = "launch", name = "srv launch", program = prog })
 
     wait_stopped(t, 2)
-    nx.test.expect(dap.session().current_frame.name).to_be("main")
-    nx.test.expect(dap.session().capabilities.supportsConfigurationDoneRequest).to_be_truthy()
+    btv.test.expect(dap.session().current_frame.name).to_be("main")
+    btv.test.expect(dap.session().capabilities.supportsConfigurationDoneRequest).to_be_truthy()
 
     -- Step + continue work the same over the socket.
     dap.step_over()

@@ -2,7 +2,7 @@
 -- extmarks (not a view). Two namespaces keep the concerns independent: breakpoint
 -- signs persist across stops, while the single stopped marker moves with execution.
 --
--- Only `sign_text` and a ranged `hl_group` actually render through nxvim's extmark
+-- Only `sign_text` and a ranged `hl_group` actually render through bemtvi's extmark
 -- layer (a whole-line `line_hl_group` is stored-but-unpainted), so the stopped line
 -- is drawn as a sign PLUS a ranged highlight spanning the line's text.
 
@@ -18,8 +18,8 @@ local stopped_locs = {}
 
 function M.setup(config)
   cfg = config
-  bp_ns = bp_ns or nx.ns.create("nxvim-dap-breakpoints")
-  stopped_ns = stopped_ns or nx.ns.create("nxvim-dap-stopped")
+  bp_ns = bp_ns or btv.ns.create("bemtvi-dap-breakpoints")
+  stopped_ns = stopped_ns or btv.ns.create("bemtvi-dap-stopped")
 end
 
 -- Absolute, symlink-naive normalization so a breakpoint path and a buffer name
@@ -37,8 +37,8 @@ M.abspath = abspath
 -- cost of one scan instead of re-walking every buffer per path.
 function M.buf_index()
   local index = {}
-  for _, b in ipairs(nx.buf.list()) do
-    local name = nx.buf.name(b)
+  for _, b in ipairs(btv.buf.list()) do
+    local name = btv.buf.name(b)
     if name and name ~= "" then
       index[abspath(name)] = b
     end
@@ -75,12 +75,12 @@ function M.render_breakpoints(path, bps, bufnr)
   if not bufnr then
     return
   end
-  nx.buf.clear_namespace(bufnr, bp_ns, 0, -1)
-  local last = nx.buf.line_count(bufnr)
+  btv.buf.clear_namespace(bufnr, bp_ns, 0, -1)
+  local last = btv.buf.line_count(bufnr)
   for _, bp in ipairs(bps) do
     if bp.line >= 1 and bp.line <= last then
       local v = variant(bp)
-      nx.buf.set_extmark(bufnr, bp_ns, bp.line - 1, 0, {
+      btv.buf.set_extmark(bufnr, bp_ns, bp.line - 1, 0, {
         sign_text = v.text,
         sign_hl_group = v.hl,
         priority = 20,
@@ -93,7 +93,7 @@ end
 function M.clear_breakpoints(path)
   local bufnr = M.path_bufnr(path)
   if bufnr then
-    nx.buf.clear_namespace(bufnr, bp_ns, 0, -1)
+    btv.buf.clear_namespace(bufnr, bp_ns, 0, -1)
   end
 end
 
@@ -125,8 +125,8 @@ local marked = {} -- bufnr -> true: the buffers currently carrying a stopped mar
 function M.render_stopped()
   for bufnr in pairs(marked) do
     -- The buffer may have been wiped since it was marked (`:bd` on the stopped file).
-    if nx.buf.is_valid(bufnr) then
-      nx.buf.clear_namespace(bufnr, stopped_ns, 0, -1)
+    if btv.buf.is_valid(bufnr) then
+      btv.buf.clear_namespace(bufnr, stopped_ns, 0, -1)
     end
   end
   marked = {}
@@ -137,9 +137,9 @@ function M.render_stopped()
   local index = M.buf_index()
   for _, loc in pairs(stopped_locs) do
     local bufnr = index[abspath(loc.path)]
-    if bufnr and loc.line >= 1 and loc.line <= nx.buf.line_count(bufnr) then
-      local text = nx.buf.lines(bufnr, loc.line - 1, loc.line, false)[1] or ""
-      nx.buf.set_extmark(bufnr, stopped_ns, loc.line - 1, 0, {
+    if bufnr and loc.line >= 1 and loc.line <= btv.buf.line_count(bufnr) then
+      local text = btv.buf.lines(bufnr, loc.line - 1, loc.line, false)[1] or ""
+      btv.buf.set_extmark(bufnr, stopped_ns, loc.line - 1, 0, {
         sign_text = s.text,
         sign_hl_group = s.hl,
         end_row = loc.line - 1,

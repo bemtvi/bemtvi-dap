@@ -38,8 +38,8 @@ local M = {}
 
 -- The current buffer's absolute file path, or "" when the buffer has no file.
 local function current_file()
-  local bufnr = nx.buf.current()
-  local name = bufnr and nx.buf.name(bufnr)
+  local bufnr = btv.buf.current()
+  local name = bufnr and btv.buf.name(bufnr)
   if not name or name == "" then
     return ""
   end
@@ -135,7 +135,7 @@ local function map_config(config, string_fn)
     if t == "function" then
       local ok, res = pcall(v)
       if not ok then
-        error("nxvim-dap: a configuration value function errored: " .. tostring(res), 0)
+        error("bemtvi-dap: a configuration value function errored: " .. tostring(res), 0)
       end
       return walk(res)
     elseif t == "table" then
@@ -197,39 +197,39 @@ function M.resolve_dynamic(config, ctx)
   local inputs = index_inputs(config.inputs)
   local commands = ctx.commands or {}
   local cache = {}
-  return nx.async(function()
+  return btv.async(function()
     local function run_command(id, args)
       local fn = commands[id]
       if not fn then
-        error("nxvim-dap: no command registered for ${command:" .. id .. "}", 0)
+        error("bemtvi-dap: no command registered for ${command:" .. id .. "}", 0)
       end
-      return tostring(nx.await(fn(args, config)))
+      return tostring(btv.await(fn(args, config)))
     end
     local function run_input(id)
       local def = inputs[id]
       if not def then
-        error("nxvim-dap: no input '" .. id .. "' defined (config.inputs)", 0)
+        error("bemtvi-dap: no input '" .. id .. "' defined (config.inputs)", 0)
       end
       local kind = def.type
       if kind == "promptString" then
-        local v = nx.await(nx.ui.input({
+        local v = btv.await(btv.ui.input({
           prompt = (def.description or id) .. ": ",
           default = def.default or "",
         }))
         if v == nil then
-          error("nxvim-dap: input '" .. id .. "' cancelled", 0)
+          error("bemtvi-dap: input '" .. id .. "' cancelled", 0)
         end
         return v
       elseif kind == "pickString" then
-        local v = nx.await(nx.ui.select(def.options or {}, { prompt = def.description or id }))
+        local v = btv.await(btv.ui.select(def.options or {}, { prompt = def.description or id }))
         if v == nil then
-          error("nxvim-dap: pick '" .. id .. "' cancelled", 0)
+          error("bemtvi-dap: pick '" .. id .. "' cancelled", 0)
         end
         return tostring(v)
       elseif kind == "command" then
         return run_command(def.command, def.args)
       else
-        error("nxvim-dap: input '" .. id .. "' has unsupported type " .. tostring(kind), 0)
+        error("bemtvi-dap: input '" .. id .. "' has unsupported type " .. tostring(kind), 0)
       end
     end
     local function token(ns, id)

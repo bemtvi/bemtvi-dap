@@ -1,46 +1,46 @@
-<!-- DO NOT EDIT doc/nxvim-dap.txt BY HAND. It is generated from this file by
+<!-- DO NOT EDIT doc/bemtvi-dap.txt BY HAND. It is generated from this file by
 panvimdoc — run `scripts/gen-vimdoc.sh` after editing. -->
 
-A Debug Adapter Protocol (DAP) client for nxvim — the nxvim sibling of nvim-dap, built entirely on
-the native `nx.*` plugin API (ADR 0002): no buffer-mutation hacks, no bespoke rendering loop.
+A Debug Adapter Protocol (DAP) client for bemtvi — the bemtvi sibling of nvim-dap, built entirely on
+the native `btv.*` plugin API (ADR 0002): no buffer-mutation hacks, no bespoke rendering loop.
 
 A debug adapter is a long-lived child that speaks Content-Length-framed JSON over stdio — exactly
-like a language server — so nxvim-dap rides nxvim's duplex process primitive `nx.process`, frames
+like a language server — so bemtvi-dap rides bemtvi's duplex process primitive `btv.process`, frames
 the wire itself, paints breakpoint / stopped signs with extmarks, and renders the scopes/stack
-sidebar and REPL on read-only `nx.view` docks. Breakpoints live in real editor buffers; the panels
+sidebar and REPL on read-only `btv.view` docks. Breakpoints live in real editor buffers; the panels
 own their own lines. It drives breakpoints (conditional / hit / log + exception filters), stepping
 and restart, a scopes/stack/watches sidebar with inline value editing, multiple concurrent
 sessions, and a REPL.
 
 Two adapter transports are supported: `type = "executable"` (a duplex stdio child over
-`nx.process`) and `type = "server"` (a TCP connection over `nx.socket`, optionally launching the
+`btv.process`) and `type = "server"` (a TCP connection over `btv.socket`, optionally launching the
 adapter executable first).
 
-<!-- Passed through verbatim so `:help nxvim-dap` lands on this page (panvimdoc
+<!-- Passed through verbatim so `:help bemtvi-dap` lands on this page (panvimdoc
      derives per-section tags but no bare project tag). -->
 ```vimdoc
-                                                                    *nxvim-dap*
+                                                                    *bemtvi-dap*
 ```
 
-# Why nx.process
+# Why btv.process
 
-The keystone is `nx.process.open` — a bidirectional child whose stdin stays open for writes and
-whose stdout streams back as raw bytes. Neither `nx.run` (one-shot) nor `nx.run_stream` (read-only,
+The keystone is `btv.process.open` — a bidirectional child whose stdin stays open for writes and
+whose stdout streams back as raw bytes. Neither `btv.run` (one-shot) nor `btv.run_stream` (read-only,
 newline-split) can carry a framed protocol, so this is the same transport an in-Lua language-server
-client would need; nxvim-dap is the first consumer.
+client would need; bemtvi-dap is the first consumer.
 
 Adapters that speak over a TCP socket (`type = "server"`, e.g. codelldb, js-debug, or delve run as
-a server) ride `nx.socket.connect` — a duplex TCP sibling of `nx.process`. nxvim-dap optionally
+a server) ride `btv.socket.connect` — a duplex TCP sibling of `btv.process`. bemtvi-dap optionally
 launches the adapter executable (it opens the port), then connects to `host:port`, retrying while
 it comes up. So both adapter kinds work.
 
-The REPL prompt and breakpoint conditions need nxvim's `nx.ui.input`; the adapter transport needs
-the native `nx.process` (a desktop/daemon session, not the serverless wasm build).
+The REPL prompt and breakpoint conditions need bemtvi's `btv.ui.input`; the adapter transport needs
+the native `btv.process` (a desktop/daemon session, not the serverless wasm build).
 
 # Features
 
 - Real adapter transport — launch/attach an executable debug adapter over a duplex stdio pipe
-  (`nx.process`), with the full DAP handshake (initialize → launch/attach → breakpoints →
+  (`btv.process`), with the full DAP handshake (initialize → launch/attach → breakpoints →
   configurationDone).
 - Breakpoints — toggle, conditional, and log points, plus a full edit flow for the condition / hit
   count / log message, shown as gutter signs and synced live to EVERY running session (a breakpoint
@@ -72,7 +72,7 @@ the native `nx.process` (a desktop/daemon session, not the serverless wasm build
 # Setup
 
 ```lua
-local dap = require("nxvim-dap")
+local dap = require("bemtvi-dap")
 dap.setup({})
 
 dap.adapters.python = {
@@ -89,13 +89,13 @@ Then press `<F5>` (or `:DapContinue`) in a Python file. `setup()` is re-runnable
 is a full reconfigure (merged fresh from the defaults). The optional table's defaults are:
 
 ```lua
-require("nxvim-dap").setup({
+require("bemtvi-dap").setup({
   signs = {
-    breakpoint = { text = "●", hl = "NxDapBreakpoint" },
-    breakpoint_condition = { text = "◆", hl = "NxDapBreakpointCondition" },
-    breakpoint_rejected = { text = "○", hl = "NxDapBreakpointRejected" },
-    log_point = { text = "◇", hl = "NxDapLogPoint" },
-    stopped = { text = "▶", hl = "NxDapStopped", line_hl = "NxDapStoppedLine" },
+    breakpoint = { text = "●", hl = "BtvDapBreakpoint" },
+    breakpoint_condition = { text = "◆", hl = "BtvDapBreakpointCondition" },
+    breakpoint_rejected = { text = "○", hl = "BtvDapBreakpointRejected" },
+    log_point = { text = "◇", hl = "BtvDapLogPoint" },
+    stopped = { text = "▶", hl = "BtvDapStopped", line_hl = "BtvDapStoppedLine" },
   },
   sidebar = {
     position = "right", width = 40, open_on_stopped = true,
@@ -119,7 +119,7 @@ require("nxvim-dap").setup({
 Exactly nvim-dap's two-table model. `dap.adapters[name]` is one of:
 
 ```lua
-local dap = require("nxvim-dap")
+local dap = require("bemtvi-dap")
 
 -- An executable (a stdio child) …
 dap.adapters.lldb = { type = "executable", command = "lldb-dap" }
@@ -156,7 +156,7 @@ dap.configurations.c = {
 }
 ```
 
-When you `:DapContinue` with no running session, nxvim-dap picks a configuration for the current
+When you `:DapContinue` with no running session, bemtvi-dap picks a configuration for the current
 buffer's filetype (prompting if there's more than one).
 
 # Variable expansion
@@ -253,7 +253,7 @@ Three commands take an optional argument; the rest take none:
   may contain spaces). With NO argument the REPL opens its `dap>` prompt instead, where each `<CR>`
   evaluates a line.
 - `:DapWatch [expr]` — `[expr]` is the expression to add to the watches panel, re-evaluated on
-  every stop (it may contain spaces). With NO argument nxvim prompts for the expression.
+  every stop (it may contain spaces). With NO argument bemtvi prompts for the expression.
 
 # Mappings
 
@@ -287,7 +287,7 @@ Rebind or disable any action through `opts.mappings` (a value of `false` on an e
 `mappings = false` for all):
 
 ```lua
-require("nxvim-dap").setup({
+require("bemtvi-dap").setup({
   mappings = { continue = "<F9>", repl_toggle = false },
 })
 ```
@@ -295,7 +295,7 @@ require("nxvim-dap").setup({
 # API
 
 ```lua
-local dap = require("nxvim-dap")
+local dap = require("bemtvi-dap")
 ```
 
 - `setup(opts)` — configure (re-runnable).
@@ -324,16 +324,16 @@ local dap = require("nxvim-dap")
 Defined as fallbacks (a colorscheme or `opts.highlights` override wins):
 
 ```
-NxDapBreakpoint  NxDapBreakpointCondition  NxDapBreakpointRejected
-NxDapLogPoint    NxDapStopped  NxDapStoppedLine
-NxDapUIScope  NxDapUIThread  NxDapUIFrame  NxDapUIFrameCurrent
-NxDapUIVarName  NxDapUIVarType  NxDapUIValue  NxDapUIDecoration
-NxDapReplPrompt  NxDapReplError
+BtvDapBreakpoint  BtvDapBreakpointCondition  BtvDapBreakpointRejected
+BtvDapLogPoint    BtvDapStopped  BtvDapStoppedLine
+BtvDapUIScope  BtvDapUIThread  BtvDapUIFrame  BtvDapUIFrameCurrent
+BtvDapUIVarName  BtvDapUIVarType  BtvDapUIValue  BtvDapUIDecoration
+BtvDapReplPrompt  BtvDapReplError
 ```
 
 ```lua
-require("nxvim-dap").setup({
-  highlights = { NxDapStopped = { fg = "#ffd54f", bold = true } },
+require("bemtvi-dap").setup({
+  highlights = { BtvDapStopped = { fg = "#ffd54f", bold = true } },
 })
 ```
 
@@ -342,7 +342,7 @@ require("nxvim-dap").setup({
 This repo ships a runnable demo with a self-contained mock adapter (no debugger install needed):
 
 ```sh
-NXVIM_CONFIG=examples nxvim examples/sample/fib.py
+BEMTVI_CONFIG=examples bemtvi examples/sample/fib.py
 ```
 
 (run from the repo root). Toggle a breakpoint with `<leader>db`, hit `<F5>`, and watch the stopped

@@ -1,8 +1,8 @@
--- ~~~ Runnable demo for nxvim-dap ~~~
+-- ~~~ Runnable demo for bemtvi-dap ~~~
 --
 -- Run it from the repo root:
 --
---     NXVIM_CONFIG=examples nxvim examples/sample/fib.py
+--     BEMTVI_CONFIG=examples bemtvi examples/sample/fib.py
 --
 -- It wires a SELF-CONTAINED mock debug adapter (examples/mock_adapter.py — a scripted
 -- DAP server, no debugger install needed) so the whole flow is driveable offline.
@@ -37,19 +37,19 @@ vim.g.mapleader = " "
 local here = vim.fn.expand("<sfile>:p:h") -- the examples/ dir
 
 -- Load the plugin straight from this repo (a local-dev spec: `dir` is never cloned).
-nx.plugins({
+btv.plugins({
   {
-    name = "nxvim-dap",
+    name = "bemtvi-dap",
     dir = vim.fn.fnamemodify(here, ":h"), -- the repo root (examples/'s parent)
     config = function()
-      local dap = require("nxvim-dap")
+      local dap = require("bemtvi-dap")
       dap.setup({
         -- Auto-open the REPL + sidebar so the playground isn't empty when you stop.
         repl = { open_on_start = true },
         sidebar = { open_on_stopped = true },
       })
 
-      -- The bundled mock adapter: a duplex stdio child, spoken over nx.process.
+      -- The bundled mock adapter: a duplex stdio child, spoken over btv.process.
       dap.adapters.mock = {
         type = "executable",
         command = "python3",

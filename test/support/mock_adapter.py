@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-# A minimal Debug Adapter Protocol server for nxvim-dap's end-to-end tests. It speaks
+# A minimal Debug Adapter Protocol server for bemtvi-dap's end-to-end tests. It speaks
 # the real Content-Length-framed wire, but its "execution" is scripted: it reports one
 # stopped frame at line 2 of the launched `program`, single-steps to line 3, and
 # terminates on continue. Enough to exercise the whole client: handshake, breakpoints,
 # the stopped drill-down (threads/stackTrace/scopes/variables), stepping, evaluate,
 # and teardown.
 #
-# Two transports (the two DAP adapter kinds nxvim-dap supports):
+# Two transports (the two DAP adapter kinds bemtvi-dap supports):
 #   * default (no args)      — DAP over stdio (an "executable" adapter).
 #   * --listen --port-file P — bind 127.0.0.1:0, write the chosen port to file P, and
 #                              serve DAP over the accepted TCP socket (a "server"

@@ -1,14 +1,14 @@
--- nxvim-dap — a Debug Adapter Protocol client for nxvim, built entirely on the
--- native `nx.*` plugin API (ADR 0002). It is the nxvim sibling of nvim-dap: the same
+-- bemtvi-dap — a Debug Adapter Protocol client for bemtvi, built entirely on the
+-- native `btv.*` plugin API (ADR 0002). It is the bemtvi sibling of nvim-dap: the same
 -- two-table model (`adapters` = how to reach a debug adapter, `configurations` = what
 -- to debug per filetype), the same launch/attach flow, breakpoints (conditional / hit /
 -- log + exception filters), stepping and restart, multiple concurrent sessions, a
 -- scopes/variables/watches sidebar with inline value editing, and a REPL — re-expressed
--- in nxvim's idiom.
+-- in bemtvi's idiom.
 --
--- The keystone is `nx.process` (the duplex child transport): a debug adapter speaks
+-- The keystone is `btv.process` (the duplex child transport): a debug adapter speaks
 -- Content-Length-framed JSON over stdio exactly like a language server, which neither
--- `nx.run` nor `nx.run_stream` can carry (they close stdin and line-split stdout).
+-- `btv.run` nor `btv.run_stream` can carry (they close stdin and line-split stdout).
 --
 -- Module map:
 --   config.lua       defaults + adapter/configuration validation
@@ -17,12 +17,12 @@
 --   session.lua      the DAP protocol state machine over an injected transport
 --   breakpoints.lua  the breakpoint store + cursor toggle
 --   signs.lua        gutter signs + the stopped-line highlight (real buffers)
---   ui.lua           the stack/scopes/variables/watches/exceptions sidebar (nx.view)
+--   ui.lua           the stack/scopes/variables/watches/exceptions sidebar (btv.view)
 --   repl.lua         the debug console (output + evaluate)
 --   highlights.lua   the fallback highlight palette
 --
 -- Quick start (init.lua):
---   local dap = require("nxvim-dap")
+--   local dap = require("bemtvi-dap")
 --   dap.setup({})
 --   dap.adapters.python = { command = "python", args = { "-m", "debugpy.adapter" } }
 --   dap.configurations.python = {
@@ -30,14 +30,14 @@
 --   }
 --   -- then <F5> / :DapContinue starts it, <leader>db toggles a breakpoint.
 
-local config_mod = require("nxvim-dap.config")
-local variables = require("nxvim-dap.variables")
-local session_mod = require("nxvim-dap.session")
-local breakpoints = require("nxvim-dap.breakpoints")
-local signs = require("nxvim-dap.signs")
-local ui = require("nxvim-dap.ui")
-local repl = require("nxvim-dap.repl")
-local highlights = require("nxvim-dap.highlights")
+local config_mod = require("bemtvi-dap.config")
+local variables = require("bemtvi-dap.variables")
+local session_mod = require("bemtvi-dap.session")
+local breakpoints = require("bemtvi-dap.breakpoints")
+local signs = require("bemtvi-dap.signs")
+local ui = require("bemtvi-dap.ui")
+local repl = require("bemtvi-dap.repl")
+local highlights = require("bemtvi-dap.highlights")
 
 local M = {}
 
@@ -74,9 +74,9 @@ local bp_restored = false
 -- Open the file at `path` in the MAIN editor and put the cursor on `line` (1-based).
 -- The cursor set defers a tick so the buffer/window have settled after the open.
 local function jump(path, line)
-  nx.open(path, { where = "main" })
-  nx.on_next_tick(function()
-    nx.cursor.set({ line, 0 })
+  btv.open(path, { where = "main" })
+  btv.on_next_tick(function()
+    btv.cursor.set({ line, 0 })
   end)
 end
 
@@ -169,7 +169,7 @@ function M._on_session_terminated(session, body)
   )
 
   if restart_cfg then
-    nx.on_next_tick(function()
+    btv.on_next_tick(function()
       M.run(restart_cfg)
     end)
   end
@@ -184,7 +184,7 @@ local function make_handlers(get_id)
       return M._exception_filter_list(caps)
     end,
     notify = function(msg, lvl)
-      nx.notify(msg, lvl)
+      btv.notify(msg, lvl)
     end,
     on_output = function(category, text)
       repl.append_output(category, text)
@@ -229,12 +229,12 @@ function M.run(config)
   config = config_mod.validate_configuration(config)
   local ok, expanded, unknown, has_dynamic = pcall(variables.expand, config)
   if not ok then
-    nx.notify(tostring(expanded), 4) -- a callable field value errored
+    btv.notify(tostring(expanded), 4) -- a callable field value errored
     return
   end
   if #unknown > 0 then
-    nx.notify(
-      "nxvim-dap: unrecognised config variable(s) left as-is: ${"
+    btv.notify(
+      "bemtvi-dap: unrecognised config variable(s) left as-is: ${"
         .. table.concat(unknown, "}, ${")
         .. "}",
       3
@@ -248,7 +248,7 @@ function M.run(config)
   variables.resolve_dynamic(expanded, { commands = M.commands }):next(function(final)
     M._start(final)
   end, function(err)
-    nx.notify("nxvim-dap: " .. tostring(err and err.message or err), 4)
+    btv.notify("bemtvi-dap: " .. tostring(err and err.message or err), 4)
   end)
 end
 
@@ -257,7 +257,7 @@ function M._start(config)
   config.inputs = nil -- a UI-only field; never sent to the adapter
   local adapter = M.adapters[config.type]
   if not adapter then
-    nx.notify(("nxvim-dap: no adapter registered for type %q"):format(config.type), 4)
+    btv.notify(("bemtvi-dap: no adapter registered for type %q"):format(config.type), 4)
     return
   end
 
@@ -294,7 +294,7 @@ end
 -- `args` is the optional `args` of a `type = "command"` input, `config` the launch config.
 function M.register_command(id, fn)
   if type(id) ~= "string" or type(fn) ~= "function" then
-    nx.notify("nxvim-dap: register_command(id, fn) needs a string id and a function", 4)
+    btv.notify("bemtvi-dap: register_command(id, fn) needs a string id and a function", 4)
     return
   end
   M.commands[id] = fn
@@ -306,14 +306,14 @@ end
 function M.restart()
   local s = M._session
   if not s or s.terminated then
-    nx.notify("nxvim-dap: no active session to restart", 3)
+    btv.notify("bemtvi-dap: no active session to restart", 3)
     return
   end
   local config = s.config
   if s.capabilities.supportsRestartRequest then
     s:restart(config, function(err)
       if err then
-        nx.notify("nxvim-dap: restart failed: " .. tostring(err.message), 4)
+        btv.notify("bemtvi-dap: restart failed: " .. tostring(err.message), 4)
       else
         repl.info("─ restarted " .. (s.name or "session") .. " ─")
       end
@@ -340,7 +340,7 @@ end
 -- The names of the launch configurations available for the current buffer's filetype —
 -- the candidate set `:DapContinue <Tab>` completes against.
 function M._configuration_names()
-  local ft = vim.bo[nx.buf.current()].filetype
+  local ft = vim.bo[btv.buf.current()].filetype
   local names = {}
   for _, c in ipairs(M.configurations[ft] or {}) do
     if c.name and c.name ~= "" then
@@ -360,10 +360,10 @@ function M.continue(name)
     M._session:continue()
     return
   end
-  local ft = vim.bo[nx.buf.current()].filetype
+  local ft = vim.bo[btv.buf.current()].filetype
   local cfgs = M.configurations[ft]
   if not cfgs or #cfgs == 0 then
-    nx.notify(("nxvim-dap: no debug configuration for filetype %q"):format(tostring(ft)), 3)
+    btv.notify(("bemtvi-dap: no debug configuration for filetype %q"):format(tostring(ft)), 3)
     return
   end
   if name and name ~= "" then
@@ -373,13 +373,13 @@ function M.continue(name)
         return
       end
     end
-    nx.notify(("nxvim-dap: no configuration %q for filetype %q"):format(name, tostring(ft)), 3)
+    btv.notify(("bemtvi-dap: no configuration %q for filetype %q"):format(name, tostring(ft)), 3)
     return
   end
   if #cfgs == 1 then
     M.run(cfgs[1])
   else
-    nx.ui
+    btv.ui
       .select(cfgs, {
         prompt = "Debug configuration",
         format_item = function(c)
@@ -387,7 +387,7 @@ function M.continue(name)
         end,
       })
       :next(function(choice)
-        -- nx.ui.select resolves the chosen item (or its index — tolerate both).
+        -- btv.ui.select resolves the chosen item (or its index — tolerate both).
         local cfg = type(choice) == "number" and cfgs[choice] or choice
         if cfg then
           M.run(cfg)
@@ -398,7 +398,7 @@ end
 
 local function require_session()
   if not M._session or M._session.terminated then
-    nx.notify("nxvim-dap: no active session", 3)
+    btv.notify("bemtvi-dap: no active session", 3)
     return nil
   end
   return M._session
@@ -436,7 +436,7 @@ end
 function M.terminate()
   local s = M._session
   if not s then
-    nx.notify("nxvim-dap: no active session", 3)
+    btv.notify("bemtvi-dap: no active session", 3)
     return
   end
   if s.terminated then
@@ -458,7 +458,7 @@ function M.terminate_all()
     end
   end
   if not any then
-    nx.notify("nxvim-dap: no debug session is running", 3)
+    btv.notify("bemtvi-dap: no debug session is running", 3)
   end
 end
 
@@ -481,14 +481,14 @@ end
 function M.pick_session()
   local list = M.sessions()
   if #list == 0 then
-    nx.notify("nxvim-dap: no sessions", 3)
+    btv.notify("bemtvi-dap: no sessions", 3)
     return
   end
   if #list == 1 then
     M.set_active_session(list[1])
     return
   end
-  nx.ui
+  btv.ui
     .select(list, {
       prompt = "Active session",
       format_item = function(s)
@@ -564,7 +564,7 @@ end
 function M.set_exception_breakpoints()
   local s = M._session
   if not s or not s.capabilities.exceptionBreakpointFilters then
-    nx.notify("nxvim-dap: the active adapter has no exception breakpoint filters", 3)
+    btv.notify("bemtvi-dap: the active adapter has no exception breakpoint filters", 3)
     return
   end
   ui.open()
@@ -591,7 +591,7 @@ function M.toggle_breakpoint()
 end
 
 function M.set_breakpoint_condition()
-  nx.ui.input({ prompt = "Breakpoint condition: " }):next(function(cond)
+  btv.ui.input({ prompt = "Breakpoint condition: " }):next(function(cond)
     if cond and cond ~= "" then
       breakpoints.toggle({ condition = cond })
     end
@@ -599,7 +599,7 @@ function M.set_breakpoint_condition()
 end
 
 function M.set_log_point()
-  nx.ui.input({ prompt = "Log point message: " }):next(function(msg)
+  btv.ui.input({ prompt = "Log point message: " }):next(function(msg)
     if msg and msg ~= "" then
       breakpoints.toggle({ logMessage = msg })
     end
@@ -612,19 +612,19 @@ end
 -- is "edit", not "toggle").
 function M.edit_breakpoint()
   local existing = breakpoints.get_at_cursor() or {}
-  nx.ui
+  btv.ui
     .input({ prompt = "Condition: ", default = existing.condition or "" })
     :next(function(condition)
       if condition == nil then
         return
       end
-      nx.ui
+      btv.ui
         .input({ prompt = "Hit condition: ", default = existing.hitCondition or "" })
         :next(function(hit)
           if hit == nil then
             return
           end
-          nx.ui
+          btv.ui
             .input({ prompt = "Log message: ", default = existing.logMessage or "" })
             :next(function(log)
               if log == nil then
@@ -692,14 +692,14 @@ end
 -- it was opened from (reopen by name re-renders) and never collides with the quickfix.
 -- `M._breakpoint_items` is pushed into it after every breakpoint mutation, so an open
 -- tab repaints live instead of showing a stale snapshot.
-local BP_LIST = "nxvim-dap-breakpoints"
+local BP_LIST = "bemtvi-dap-breakpoints"
 
 -- Rewrite the breakpoint named list from the current breakpoint set, repainting its tab
 -- in place when open. Called after every breakpoint mutation so an open list stays
 -- current; harmless before the list has ever been shown (it just updates the stored
 -- contents — no window).
 function M._refresh_breakpoint_list()
-  nx.qf.list(BP_LIST, M._breakpoint_items(), { title = "Breakpoints" })
+  btv.qf.list(BP_LIST, M._breakpoint_items(), { title = "Breakpoints" })
 end
 
 -- List every breakpoint in a named list (so selecting one jumps to that file/line),
@@ -708,11 +708,11 @@ end
 -- user isn't dropped into an empty window.
 function M.list_breakpoints()
   if #M._breakpoint_items() == 0 then
-    nx.notify("nxvim-dap: no breakpoints set", 2)
+    btv.notify("bemtvi-dap: no breakpoints set", 2)
     return
   end
   M._refresh_breakpoint_list()
-  nx.qf.show(BP_LIST)
+  btv.qf.show(BP_LIST)
 end
 
 -- ----- UI surfaces -----------------------------------------------------------
@@ -804,7 +804,7 @@ function M.setup(opts)
   -- (and never know which to restore). The plugin shada is loaded before init.lua runs,
   -- so the saved set is already in hand here — restore it once (a re-run of setup() must
   -- not wipe live breakpoints). The list refresh runs regardless of workspace.
-  local store = nx.workspace.active() and nx.shada.plugin() or nil
+  local store = btv.workspace.active() and btv.shada.plugin() or nil
   if store and not bp_restored then
     breakpoints.restore(store:get("breakpoints"))
     bp_restored = true
@@ -828,13 +828,13 @@ function M.setup(opts)
 
   for _, c in ipairs(COMMANDS) do
     local name, fn_name, desc = c[1], c[2], c[3]
-    nx.command(name, function()
+    btv.command(name, function()
       M[fn_name]()
     end, { desc = desc })
   end
   -- `:DapContinue [config]` — the launch command takes an optional configuration name,
   -- completed from the current filetype's configurations, so `<Tab>` lists them.
-  nx.command("DapContinue", function(ev)
+  btv.command("DapContinue", function(ev)
     M.continue(ev and ev.args)
   end, {
     usage = "[config]",
@@ -845,13 +845,13 @@ function M.setup(opts)
       return M._configuration_names()
     end,
   })
-  nx.command("DapEval", function(ev)
+  btv.command("DapEval", function(ev)
     M.eval(ev and ev.args)
   end, {
     usage = "[expr]",
     desc = "Evaluate [expr] in the stopped frame. No arg opens the REPL prompt instead.",
   })
-  nx.command("DapWatch", function(ev)
+  btv.command("DapWatch", function(ev)
     M.add_watch(ev and ev.args)
   end, {
     usage = "[expr]",
@@ -866,7 +866,7 @@ function M.setup(opts)
   -- dropped first: re-running it with a different (or disabled) `mappings` must not
   -- leave the old bindings behind.
   for _, key in ipairs(installed_maps) do
-    pcall(nx.keymap.del, "n", key)
+    pcall(btv.keymap.del, "n", key)
   end
   installed_maps = {}
   if M.config.mappings ~= false then
@@ -874,7 +874,7 @@ function M.setup(opts)
       if lhs and MAP_ACTIONS[action] then
         local keys = type(lhs) == "table" and lhs or { lhs }
         for _, key in ipairs(keys) do
-          nx.keymap.set("n", key, MAP_ACTIONS[action], { desc = "nxvim-dap: " .. action })
+          btv.keymap.set("n", key, MAP_ACTIONS[action], { desc = "bemtvi-dap: " .. action })
           installed_maps[#installed_maps + 1] = key
         end
       end
@@ -886,8 +886,8 @@ function M.setup(opts)
   -- ENTERED buffer is repainted — a full sweep on every BufEnter would re-mark every
   -- file that has a breakpoint each time you switch buffers.
   if not autocmds_wired then
-    local grp = nx.augroup.create("nxvim-dap", { clear = true })
-    nx.autocmd.create("BufEnter", {
+    local grp = btv.augroup.create("bemtvi-dap", { clear = true })
+    btv.autocmd.create("BufEnter", {
       group = grp,
       callback = function(ev)
         breakpoints.render_buf(ev and ev.buf)
@@ -895,7 +895,7 @@ function M.setup(opts)
     })
     autocmds_wired = true
   end
-  nx.on_next_tick(function()
+  btv.on_next_tick(function()
     breakpoints.render_all()
   end)
 

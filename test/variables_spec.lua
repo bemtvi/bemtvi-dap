@@ -3,26 +3,26 @@
 -- opened in a temp cwd). Drives the expander directly; the end-to-end flow (the adapter
 -- actually receiving the expanded path) is covered in e2e_spec.
 
-local dap = require("nxvim-dap")
-local variables = require("nxvim-dap.variables")
+local dap = require("bemtvi-dap")
+local variables = require("bemtvi-dap.variables")
 
 -- Open `fname` inside `dir`, making `dir` the working directory, so the file/workspace
 -- variables resolve deterministically. Returns the file path.
 local function open_in(t, dir, fname, body)
   local f = dir .. "/" .. fname
-  nx.await(nx.fs.write(f, body or "x = 1\n"))
+  btv.await(btv.fs.write(f, body or "x = 1\n"))
   t:cmd("cd " .. dir)
   t:cmd("edit " .. f)
   return f
 end
 
-nx.test.describe("nxvim-dap.variables expansion", function()
-  nx.test.before_each(function()
+btv.test.describe("bemtvi-dap.variables expansion", function()
+  btv.test.before_each(function()
     dap.setup({})
   end)
 
-  nx.test.it("expands the file-derived variables against the current buffer", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("expands the file-derived variables against the current buffer", function(t)
+    local dir = btv.test.tempdir()
     local f = open_in(t, dir, "main.py")
     local abs = dap.signs.abspath(f)
     local out = variables.expand({
@@ -33,16 +33,16 @@ nx.test.describe("nxvim-dap.variables expansion", function()
       ext = "${fileExtname}",
       rel = "${relativeFile}",
     })
-    nx.test.expect(out.program).to_be(abs)
-    nx.test.expect(out.base).to_be("main.py")
-    nx.test.expect(out.noext).to_be("main")
-    nx.test.expect(out.ext).to_be("py")
-    nx.test.expect(out.dirn).to_be(vim.fn.fnamemodify(abs, ":h"))
-    nx.test.expect(out.rel).to_be("main.py") -- file is under the cwd we cd'd into
+    btv.test.expect(out.program).to_be(abs)
+    btv.test.expect(out.base).to_be("main.py")
+    btv.test.expect(out.noext).to_be("main")
+    btv.test.expect(out.ext).to_be("py")
+    btv.test.expect(out.dirn).to_be(vim.fn.fnamemodify(abs, ":h"))
+    btv.test.expect(out.rel).to_be("main.py") -- file is under the cwd we cd'd into
   end)
 
-  nx.test.it("expands the workspace / cwd variables", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("expands the workspace / cwd variables", function(t)
+    local dir = btv.test.tempdir()
     open_in(t, dir, "a.py")
     local cwd = vim.fn.getcwd()
     local out = variables.expand({
@@ -50,36 +50,36 @@ nx.test.describe("nxvim-dap.variables expansion", function()
       wsfb = "${workspaceFolderBasename}",
       cwd = "${cwd}",
     })
-    nx.test.expect(out.wsf).to_be(cwd)
-    nx.test.expect(out.cwd).to_be(cwd)
-    nx.test.expect(out.wsfb).to_be(vim.fn.fnamemodify(cwd, ":t"))
+    btv.test.expect(out.wsf).to_be(cwd)
+    btv.test.expect(out.cwd).to_be(cwd)
+    btv.test.expect(out.wsfb).to_be(vim.fn.fnamemodify(cwd, ":t"))
   end)
 
-  nx.test.it("expands ${env:NAME} (and empties an unset one)", function(t)
-    open_in(t, nx.test.tempdir(), "a.py")
+  btv.test.it("expands ${env:NAME} (and empties an unset one)", function(t)
+    open_in(t, btv.test.tempdir(), "a.py")
     local out = variables.expand({
       p = "${env:PATH}",
-      missing = "${env:NXVIM_DAP_DEFINITELY_UNSET}",
+      missing = "${env:BEMTVI_DAP_DEFINITELY_UNSET}",
     })
-    nx.test.expect(out.p).to_be(os.getenv("PATH"))
-    nx.test.expect(out.missing).to_be("")
+    btv.test.expect(out.p).to_be(os.getenv("PATH"))
+    btv.test.expect(out.missing).to_be("")
   end)
 
-  nx.test.it("leaves an unrecognised ${...} untouched and reports it", function(t)
-    open_in(t, nx.test.tempdir(), "a.py")
+  btv.test.it("leaves an unrecognised ${...} untouched and reports it", function(t)
+    open_in(t, btv.test.tempdir(), "a.py")
     local out, unknown = variables.expand({ weird = "before-${nope}-after" })
-    nx.test.expect(out.weird).to_be("before-${nope}-after")
+    btv.test.expect(out.weird).to_be("before-${nope}-after")
     local found = false
     for _, n in ipairs(unknown) do
       if n == "nope" then
         found = true
       end
     end
-    nx.test.expect(found).to_be(true)
+    btv.test.expect(found).to_be(true)
   end)
 
-  nx.test.it("recurses into args lists and nested tables", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("recurses into args lists and nested tables", function(t)
+    local dir = btv.test.tempdir()
     local f = open_in(t, dir, "main.py")
     local abs = dap.signs.abspath(f)
     local out = variables.expand({
@@ -87,14 +87,14 @@ nx.test.describe("nxvim-dap.variables expansion", function()
       env = { ROOT = "${workspaceFolder}" },
       n = 5,
     })
-    nx.test.expect(out.args[2]).to_be(abs)
-    nx.test.expect(out.args[3]).to_be("main.py")
-    nx.test.expect(out.env.ROOT).to_be(vim.fn.getcwd())
-    nx.test.expect(out.n).to_be(5) -- non-strings pass through untouched
+    btv.test.expect(out.args[2]).to_be(abs)
+    btv.test.expect(out.args[3]).to_be("main.py")
+    btv.test.expect(out.env.ROOT).to_be(vim.fn.getcwd())
+    btv.test.expect(out.n).to_be(5) -- non-strings pass through untouched
   end)
 
-  nx.test.it("calls a dynamic-value function and expands its result", function(t)
-    local dir = nx.test.tempdir()
+  btv.test.it("calls a dynamic-value function and expands its result", function(t)
+    local dir = btv.test.tempdir()
     local f = open_in(t, dir, "main.py")
     local abs = dap.signs.abspath(f)
     local out = variables.expand({
@@ -110,38 +110,38 @@ nx.test.describe("nxvim-dap.variables expansion", function()
         end,
       },
     })
-    nx.test.expect(out.program).to_be(abs)
-    nx.test.expect(out.literal).to_be("/computed/path")
-    nx.test.expect(out.args[1]).to_be("main.py")
+    btv.test.expect(out.program).to_be(abs)
+    btv.test.expect(out.literal).to_be("/computed/path")
+    btv.test.expect(out.args[1]).to_be("main.py")
   end)
 
-  nx.test.it("fails loud when a dynamic-value function errors", function(t)
-    open_in(t, nx.test.tempdir(), "a.py")
+  btv.test.it("fails loud when a dynamic-value function errors", function(t)
+    open_in(t, btv.test.tempdir(), "a.py")
     local ok, err = pcall(variables.expand, {
       program = function()
         error("boom")
       end,
     })
-    nx.test.expect(ok).to_be(false)
-    nx.test.expect(tostring(err):find("boom", 1, true)).never.to_be_nil()
+    btv.test.expect(ok).to_be(false)
+    btv.test.expect(tostring(err):find("boom", 1, true)).never.to_be_nil()
   end)
 
-  nx.test.it("flags an ${input:…}/${command:…} as dynamic, leaving it for resolve", function(t)
-    open_in(t, nx.test.tempdir(), "a.py")
+  btv.test.it("flags an ${input:…}/${command:…} as dynamic, leaving it for resolve", function(t)
+    open_in(t, btv.test.tempdir(), "a.py")
     local out, _unknown, has_dynamic = variables.expand({ program = "${input:p}", x = "${file}" })
-    nx.test.expect(has_dynamic).to_be(true)
-    nx.test.expect(out.program).to_be("${input:p}") -- left intact for the async pass
+    btv.test.expect(has_dynamic).to_be(true)
+    btv.test.expect(out.program).to_be("${input:p}") -- left intact for the async pass
   end)
 end)
 
-nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", function()
+btv.test.describe("bemtvi-dap.variables dynamic (input/command) resolution", function()
   local function open(t)
-    local dir = nx.test.tempdir()
-    nx.await(nx.fs.write(dir .. "/a.py", "x = 1\n"))
+    local dir = btv.test.tempdir()
+    btv.await(btv.fs.write(dir .. "/a.py", "x = 1\n"))
     t:cmd("edit " .. dir .. "/a.py")
   end
 
-  nx.test.it("resolves ${command:id} from the command registry", function(t)
+  btv.test.it("resolves ${command:id} from the command registry", function(t)
     open(t)
     local resolved
     variables
@@ -158,18 +158,18 @@ nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", funct
     t:wait_for(function()
       return resolved
     end, { tries = 100, interval = 20, message = "command did not resolve" })
-    nx.test.expect(resolved.program).to_be("/built/app")
+    btv.test.expect(resolved.program).to_be("/built/app")
   end)
 
-  nx.test.it("awaits a ${command:id} that returns a promise", function(t)
+  btv.test.it("awaits a ${command:id} that returns a promise", function(t)
     open(t)
     local resolved
     variables
       .resolve_dynamic({ program = "${command:async}" }, {
         commands = {
           async = function()
-            return nx.promise.new(function(resolve)
-              nx.on_next_tick(function()
+            return btv.promise.new(function(resolve)
+              btv.on_next_tick(function()
                 resolve("/deferred")
               end)
             end)
@@ -182,10 +182,10 @@ nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", funct
     t:wait_for(function()
       return resolved
     end, { tries = 100, interval = 20, message = "async command did not resolve" })
-    nx.test.expect(resolved.program).to_be("/deferred")
+    btv.test.expect(resolved.program).to_be("/deferred")
   end)
 
-  nx.test.it("prompts for an ${input:id} promptString", function(t)
+  btv.test.it("prompts for an ${input:id} promptString", function(t)
     open(t)
     local resolved
     variables
@@ -200,10 +200,10 @@ nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", funct
     t:wait_for(function()
       return resolved
     end, { tries = 100, interval = 20, message = "promptString did not resolve" })
-    nx.test.expect(resolved.program).to_be("/typed/path")
+    btv.test.expect(resolved.program).to_be("/typed/path")
   end)
 
-  nx.test.it("offers a menu for an ${input:id} pickString", function(t)
+  btv.test.it("offers a menu for an ${input:id} pickString", function(t)
     open(t)
     local resolved
     variables
@@ -220,10 +220,10 @@ nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", funct
     t:wait_for(function()
       return resolved
     end, { tries = 100, interval = 20, message = "pickString did not resolve" })
-    nx.test.expect(resolved.mode).to_be("debug")
+    btv.test.expect(resolved.mode).to_be("debug")
   end)
 
-  nx.test.it("resolves a type='command' input through the registry", function(t)
+  btv.test.it("resolves a type='command' input through the registry", function(t)
     open(t)
     local resolved
     variables
@@ -243,10 +243,10 @@ nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", funct
     t:wait_for(function()
       return resolved
     end, { tries = 100, interval = 20, message = "command-input did not resolve" })
-    nx.test.expect(resolved.program).to_be("/found/x")
+    btv.test.expect(resolved.program).to_be("/found/x")
   end)
 
-  nx.test.it("prompts only once for an input referenced twice", function(t)
+  btv.test.it("prompts only once for an input referenced twice", function(t)
     open(t)
     local resolved
     variables
@@ -262,11 +262,11 @@ nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", funct
     t:wait_for(function()
       return resolved
     end, { tries = 100, interval = 20, message = "cached input did not resolve" })
-    nx.test.expect(resolved.program).to_be("X")
-    nx.test.expect(resolved.args[1]).to_be("X")
+    btv.test.expect(resolved.program).to_be("X")
+    btv.test.expect(resolved.args[1]).to_be("X")
   end)
 
-  nx.test.it("rejects a missing ${input:id} definition", function(t)
+  btv.test.it("rejects a missing ${input:id} definition", function(t)
     open(t)
     local err
     variables.resolve_dynamic({ program = "${input:missing}" }, {}):next(nil, function(e)
@@ -275,10 +275,10 @@ nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", funct
     t:wait_for(function()
       return err
     end, { tries = 100, interval = 20, message = "missing input did not reject" })
-    nx.test.expect(tostring(err):find("missing", 1, true)).never.to_be_nil()
+    btv.test.expect(tostring(err):find("missing", 1, true)).never.to_be_nil()
   end)
 
-  nx.test.it("rejects a missing ${command:id}", function(t)
+  btv.test.it("rejects a missing ${command:id}", function(t)
     open(t)
     local err
     variables
@@ -289,6 +289,6 @@ nx.test.describe("nxvim-dap.variables dynamic (input/command) resolution", funct
     t:wait_for(function()
       return err
     end, { tries = 100, interval = 20, message = "missing command did not reject" })
-    nx.test.expect(tostring(err):find("nope", 1, true)).never.to_be_nil()
+    btv.test.expect(tostring(err):find("nope", 1, true)).never.to_be_nil()
   end)
 end)

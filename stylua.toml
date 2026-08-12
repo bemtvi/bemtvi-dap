@@ -1,4 +1,4 @@
-# stylua formatting for nxvim-tree — matches nxvim's first-party Lua style:
+# stylua formatting for bemtvi-tree — matches bemtvi's first-party Lua style:
 # 2-space indents, 100-column width, double-quote strings.
 column_width = 100
 line_endings = "Unix"

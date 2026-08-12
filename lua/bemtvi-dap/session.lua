@@ -4,13 +4,13 @@
 -- in, so the protocol logic — the initialize/launch handshake, request/response
 -- correlation by `seq`, event dispatch, the stopped→threads→stackTrace→scopes→
 -- variables drill-down — is testable against a fake transport with no subprocess,
--- and `M.spawn` is the thin adapter that wires a real `nx.process` child to it.
+-- and `M.spawn` is the thin adapter that wires a real `btv.process` child to it.
 --
 -- The session is UI-agnostic: it owns protocol state and fires `handlers.*`
 -- listeners (on_stopped / on_continued / on_terminated / on_output / on_event /
 -- on_state). init.lua registers those to drive the signs / sidebar / REPL.
 
-local rpc = require("nxvim-dap.rpc")
+local rpc = require("bemtvi-dap.rpc")
 
 local M = {}
 
@@ -45,7 +45,7 @@ local function notify(self, msg, level)
   if self.handlers.notify then
     self.handlers.notify(msg, level or 3)
   else
-    nx.notify(msg, level or 3)
+    btv.notify(msg, level or 3)
   end
 end
 M._notify = notify
@@ -73,7 +73,7 @@ function Session:request(command, arguments, cb)
   if self.closed then
     if cb then
       cb({
-        message = ("nxvim-dap: %s: the adapter connection is closed"):format(command),
+        message = ("bemtvi-dap: %s: the adapter connection is closed"):format(command),
         cancelled = true,
       })
     end
@@ -152,7 +152,7 @@ end
 function Session:_on_reverse_request(msg)
   if msg.command == "runInTerminal" then
     -- Launch the debuggee as a detached duplex child. We can't give it a real TTY
-    -- (nxvim has no Lua terminal-buffer spawn API yet), so a program needing an
+    -- (bemtvi has no Lua terminal-buffer spawn API yet), so a program needing an
     -- interactive console won't get one — but the common case (a program that just
     -- runs) works. Report the failure loud if the spawn never starts.
     local body = msg.arguments or {}
@@ -163,7 +163,7 @@ function Session:_on_reverse_request(msg)
     end
     local cmd = table.remove(argv, 1)
     local ok = pcall(function()
-      nx.process.open({
+      btv.process.open({
         cmd = cmd,
         args = argv,
         cwd = body.cwd,
@@ -182,7 +182,7 @@ function Session:_on_reverse_request(msg)
     end)
     self:respond(msg, ok, ok and {} or nil, ok and nil or "runInTerminal: spawn failed")
   else
-    self:respond(msg, false, nil, ("nxvim-dap: unsupported reverse request %q"):format(msg.command))
+    self:respond(msg, false, nil, ("bemtvi-dap: unsupported reverse request %q"):format(msg.command))
   end
 end
 
@@ -258,8 +258,8 @@ end
 function Session:start(config)
   self.config = config
   self:request("initialize", {
-    clientID = "nxvim",
-    clientName = "nxvim",
+    clientID = "bemtvi",
+    clientName = "bemtvi",
     adapterID = config.type,
     locale = "en",
     linesStartAt1 = true,
@@ -269,7 +269,7 @@ function Session:start(config)
     supportsVariableType = true,
   }, function(err, body)
     if err then
-      notify(self, "nxvim-dap: initialize failed: " .. tostring(err.message), 4)
+      notify(self, "bemtvi-dap: initialize failed: " .. tostring(err.message), 4)
       self:disconnect()
       return
     end
@@ -280,7 +280,7 @@ function Session:start(config)
     -- Fire launch/attach; its response arrives after configurationDone.
     self:request(config.request, config, function(lerr)
       if lerr then
-        notify(self, ("nxvim-dap: %s failed: %s"):format(config.request, tostring(lerr.message)), 4)
+        notify(self, ("bemtvi-dap: %s failed: %s"):format(config.request, tostring(lerr.message)), 4)
       end
     end)
   end)
@@ -314,7 +314,7 @@ function Session:_finish_configuration()
           -- Never flip to "configured" on a refused configurationDone: the session is
           -- not running, and pretending it is makes every later push look accepted.
           if not err.cancelled then
-            notify(self, "nxvim-dap: configurationDone failed: " .. tostring(err.message), 4)
+            notify(self, "bemtvi-dap: configurationDone failed: " .. tostring(err.message), 4)
           end
           return
         end
@@ -370,7 +370,7 @@ end
 -- ids (the `filter` field of `exceptionBreakpointFilters` entries). `cb(err)` optional.
 function Session:set_exception_breakpoints(filters, cb)
   if not self.capabilities.exceptionBreakpointFilters then
-    notify(self, "nxvim-dap: this adapter has no exception breakpoint filters", 3)
+    notify(self, "bemtvi-dap: this adapter has no exception breakpoint filters", 3)
     if cb then
       cb({ message = "no exception breakpoint filters" })
     end
@@ -378,7 +378,7 @@ function Session:set_exception_breakpoints(filters, cb)
   end
   self:request("setExceptionBreakpoints", { filters = filters or {} }, function(err)
     if err and not err.cancelled then
-      notify(self, "nxvim-dap: setExceptionBreakpoints failed: " .. tostring(err.message), 4)
+      notify(self, "bemtvi-dap: setExceptionBreakpoints failed: " .. tostring(err.message), 4)
     end
     if cb then
       cb(err)
@@ -415,7 +415,7 @@ function Session:_on_stopped(body)
   -- like a stop with no stack rather than a request the adapter refused.
   self:request("threads", nil, function(terr, tbody)
     if terr and not terr.cancelled then
-      notify(self, "nxvim-dap: threads failed: " .. tostring(terr.message), 4)
+      notify(self, "bemtvi-dap: threads failed: " .. tostring(terr.message), 4)
     end
     self.threads = {}
     for _, t in ipairs((tbody or {}).threads or {}) do
@@ -435,7 +435,7 @@ function Session:_on_stopped(body)
       { threadId = tid, startFrame = 0, levels = 20 },
       function(serr, sbody)
         if serr and not serr.cancelled then
-          notify(self, "nxvim-dap: stackTrace failed: " .. tostring(serr.message), 4)
+          notify(self, "bemtvi-dap: stackTrace failed: " .. tostring(serr.message), 4)
         end
         local frames = (sbody or {}).stackFrames or {}
         self.current_frame = frames[1]
@@ -456,7 +456,7 @@ end
 function Session:frame_scopes(frame_id, cb)
   self:request("scopes", { frameId = frame_id }, function(err, body)
     if err and not err.cancelled then
-      notify(self, "nxvim-dap: scopes failed: " .. tostring(err.message), 4)
+      notify(self, "bemtvi-dap: scopes failed: " .. tostring(err.message), 4)
     end
     local scopes = (body or {}).scopes or {}
     local remaining = #scopes
@@ -484,7 +484,7 @@ function Session:variables(ref, cb)
   end
   self:request("variables", { variablesReference = ref }, function(err, body)
     if err and not err.cancelled then
-      notify(self, "nxvim-dap: variables failed: " .. tostring(err.message), 4)
+      notify(self, "bemtvi-dap: variables failed: " .. tostring(err.message), 4)
     end
     cb((body or {}).variables or {})
   end)
@@ -528,7 +528,7 @@ end
 -- where body carries the updated `value` / `variablesReference`.
 function Session:set_variable(ref, name, value, cb)
   if not self.capabilities.supportsSetVariable then
-    notify(self, "nxvim-dap: this adapter does not support setting variables", 3)
+    notify(self, "bemtvi-dap: this adapter does not support setting variables", 3)
     if cb then
       cb({ message = "setVariable unsupported" })
     end
@@ -545,7 +545,7 @@ end
 -- `frame_id`. Needs `supportsSetExpression`. `cb(err, body)`.
 function Session:set_expression(expression, value, frame_id, cb)
   if not self.capabilities.supportsSetExpression then
-    notify(self, "nxvim-dap: this adapter does not support setExpression", 3)
+    notify(self, "bemtvi-dap: this adapter does not support setExpression", 3)
     if cb then
       cb({ message = "setExpression unsupported" })
     end
@@ -571,7 +571,7 @@ end
 local function step(self, command)
   local tid = self.stopped_thread_id
   if not tid then
-    notify(self, "nxvim-dap: not stopped", 3)
+    notify(self, "bemtvi-dap: not stopped", 3)
     return
   end
   self.stopped_thread_id = nil
@@ -581,7 +581,7 @@ local function step(self, command)
   end
   self:request(command, { threadId = tid }, function(err)
     if err and not err.cancelled then
-      notify(self, ("nxvim-dap: %s failed: %s"):format(command, tostring(err.message)), 4)
+      notify(self, ("bemtvi-dap: %s failed: %s"):format(command, tostring(err.message)), 4)
     end
   end)
 end
@@ -612,7 +612,7 @@ function Session:pause(thread_id)
   end
   self:request("pause", { threadId = thread_id }, function(err)
     if err and not err.cancelled then
-      notify(self, "nxvim-dap: pause failed: " .. tostring(err.message), 4)
+      notify(self, "bemtvi-dap: pause failed: " .. tostring(err.message), 4)
     end
   end)
 end
@@ -633,7 +633,7 @@ function Session:_shutdown(opts)
       return
     end
     self.closed = true
-    self:_fail_pending("nxvim-dap: the session ended before the adapter answered")
+    self:_fail_pending("bemtvi-dap: the session ended before the adapter answered")
     self.transport.close()
   end
   self:request("disconnect", {
@@ -641,7 +641,7 @@ function Session:_shutdown(opts)
     terminateDebuggee = opts.terminate ~= false,
   }, close)
   -- Don't wait forever on a wedged adapter.
-  nx.timer(close, opts.grace or 500)
+  btv.timer(close, opts.grace or 500)
 end
 
 -- Gracefully end the session (the user's stop / terminate). `opts.terminate = false`
@@ -680,7 +680,7 @@ local function terminate_once(session, body)
   session._shutting_down = true
   if not session.closed then
     session.closed = true
-    session:_fail_pending("nxvim-dap: the adapter connection closed")
+    session:_fail_pending("bemtvi-dap: the adapter connection closed")
     -- Release what is left of the transport. The wire that died is not necessarily the
     -- whole child: a `server` adapter's launched executable outlives the socket, and
     -- would keep running otherwise. Killing an already-dead child is harmless.
@@ -688,11 +688,11 @@ local function terminate_once(session, body)
   end
 end
 
--- An EXECUTABLE adapter: a duplex stdio child over nx.process. Its stdout is the DAP
+-- An EXECUTABLE adapter: a duplex stdio child over btv.process. Its stdout is the DAP
 -- wire; stderr is surfaced as output; its exit ends the session. Starts the session
 -- immediately (writes buffer in the actor until the child is up).
 local function connect_executable(session, resolved, config, handlers)
-  local proc = nx.process.open({
+  local proc = btv.process.open({
     cmd = resolved.command,
     args = resolved.args or {},
     cwd = resolved.cwd,
@@ -719,7 +719,7 @@ local function connect_executable(session, resolved, config, handlers)
 end
 
 -- A SERVER adapter: optionally launch the adapter executable (it opens the port),
--- then connect over nx.socket — retrying while the executable comes up — and start
+-- then connect over btv.socket — retrying while the executable comes up — and start
 -- the session once connected. The DAP wire is the socket; the executable's std streams
 -- are surfaced as output.
 local function connect_server(session, resolved, config, handlers)
@@ -731,7 +731,7 @@ local function connect_server(session, resolved, config, handlers)
 
   local exe
   if resolved.executable then
-    exe = nx.process.open({
+    exe = btv.process.open({
       cmd = resolved.executable.command,
       args = resolved.executable.args or {},
       cwd = resolved.executable.cwd,
@@ -757,7 +757,7 @@ local function connect_server(session, resolved, config, handlers)
     attempt = attempt + 1
     local connected = false
     local sock
-    sock = nx.socket.connect({
+    sock = btv.socket.connect({
       host = host,
       port = port,
       on_connect = function()
@@ -780,11 +780,11 @@ local function connect_server(session, resolved, config, handlers)
           terminate_once(session, {})
         elseif attempt < max_retries and not session.terminated then
           -- Not up yet: retry after a short delay (the executable is still binding).
-          nx.timer(try_connect, retry_delay)
+          btv.timer(try_connect, retry_delay)
         else
           notify(
             session,
-            ("nxvim-dap: could not connect to %s:%d (%s)"):format(host, port, tostring(err)),
+            ("bemtvi-dap: could not connect to %s:%d (%s)"):format(host, port, tostring(err)),
             4
           )
           if exe then
@@ -818,7 +818,7 @@ function M.spawn(adapter, config, handlers)
   session = M.new(transport, handlers)
 
   resolve_adapter(adapter, config, function(resolved)
-    local ok, err = pcall(require("nxvim-dap.config").validate_adapter, resolved, config.type)
+    local ok, err = pcall(require("bemtvi-dap.config").validate_adapter, resolved, config.type)
     if not ok then
       notify(session, tostring(err), 4)
       terminate_once(session, {})
