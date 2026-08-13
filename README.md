@@ -1,6 +1,6 @@
 # bemtvi-dap
 
-A **Debug Adapter Protocol** client for [bemtvi](https://github.com/davidrios/bemtvi) —
+A **Debug Adapter Protocol** client for [bemtvi](https://github.com/bemtvi/bemtvi) —
 the bemtvi sibling of [nvim-dap](https://github.com/mfussenegger/nvim-dap).
 
 It is built entirely on the native `btv.*` plugin API (ADR 0002): no buffer-mutation
@@ -36,7 +36,7 @@ Declare it with the built-in `:Plugins` manager, then `:PluginSync`:
 ```lua
 btv.plugins({
   {
-    "davidrios/bemtvi-dap",
+    "bemtvi/bemtvi-dap",
     config = function()
       local dap = require("bemtvi-dap")
       dap.setup({})
