@@ -1,31 +1,31 @@
-*bemtvi-dap.txt*                      A Debug Adapter Protocol client for bemtvi
+*bemtvi-dap.txt*                    A Debug Adapter Protocol client for bemtvi
 
 ==============================================================================
-Table of Contents                                *bemtvi-dap-table-of-contents*
+Table of Contents                               *bemtvi-dap-table-of-contents*
 
-1. Why btv.process                                   |bemtvi-dap-why-btv.process|
-2. Features                                               |bemtvi-dap-features|
-3. Setup                                                     |bemtvi-dap-setup|
-4. Adapters and configurations         |bemtvi-dap-adapters-and-configurations|
-5. Variable expansion                           |bemtvi-dap-variable-expansion|
-6. Commands                                               |bemtvi-dap-commands|
-7. Mappings                                               |bemtvi-dap-mappings|
-8. API                                                         |bemtvi-dap-api|
-9. Highlights                                           |bemtvi-dap-highlights|
-10. Trying it locally                            |bemtvi-dap-trying-it-locally|
+1. Why btv.process                                |bemtvi-dap-why-btv.process|
+2. Features                                              |bemtvi-dap-features|
+3. Setup                                                    |bemtvi-dap-setup|
+4. Adapters and configurations        |bemtvi-dap-adapters-and-configurations|
+5. Variable expansion                          |bemtvi-dap-variable-expansion|
+6. Commands                                              |bemtvi-dap-commands|
+7. Mappings                                              |bemtvi-dap-mappings|
+8. API                                                        |bemtvi-dap-api|
+9. Highlights                                          |bemtvi-dap-highlights|
+10. Trying it locally                           |bemtvi-dap-trying-it-locally|
 
 A Debug Adapter Protocol (DAP) client for bemtvi — the bemtvi sibling of
 nvim-dap, built entirely on the native `btv.*` plugin API (ADR 0002): no
 buffer-mutation hacks, no bespoke rendering loop.
 
 A debug adapter is a long-lived child that speaks Content-Length-framed JSON
-over stdio — exactly like a language server — so bemtvi-dap rides bemtvi's
-duplex process primitive `btv.process`, frames the wire itself, paints
-breakpoint / stopped signs with extmarks, and renders the scopes/stack sidebar
-and REPL on read-only `btv.view` docks. Breakpoints live in real editor buffers;
-the panels own their own lines. It drives breakpoints (conditional / hit / log
-+ exception filters), stepping and restart, a scopes/stack/watches sidebar with
-inline value editing, multiple concurrent sessions, and a REPL.
+over stdio — exactly like a language server — so bemtvi-dap rides
+bemtvi's duplex process primitive `btv.process`, frames the wire itself,
+paints breakpoint / stopped signs with extmarks, and renders the scopes/stack
+sidebar and REPL on read-only `btv.view` docks. Breakpoints live in real editor
+buffers; the panels own their own lines. It drives breakpoints (conditional /
+hit / log + exception filters), stepping and restart, a scopes/stack/watches
+sidebar with inline value editing, multiple concurrent sessions, and a REPL.
 
 Two adapter transports are supported: `type = "executable"` (a duplex stdio
 child over `btv.process`) and `type = "server"` (a TCP connection over
@@ -35,7 +35,7 @@ child over `btv.process`) and `type = "server"` (a TCP connection over
 
 
 ==============================================================================
-1. Why btv.process                                   *bemtvi-dap-why-btv.process*
+1. Why btv.process                                *bemtvi-dap-why-btv.process*
 
 The keystone is `btv.process.open` — a bidirectional child whose stdin stays
 open for writes and whose stdout streams back as raw bytes. Neither `btv.run`
@@ -55,7 +55,7 @@ the serverless wasm build).
 
 
 ==============================================================================
-2. Features                                               *bemtvi-dap-features*
+2. Features                                              *bemtvi-dap-features*
 
 - Real adapter transport — launch/attach an executable debug adapter over a duplex stdio pipe
     (`btv.process`), with the full DAP handshake (initialize → launch/attach → breakpoints →
@@ -89,7 +89,7 @@ the serverless wasm build).
 
 
 ==============================================================================
-3. Setup                                                     *bemtvi-dap-setup*
+3. Setup                                                    *bemtvi-dap-setup*
 
 >lua
     local dap = require("bemtvi-dap")
@@ -137,7 +137,7 @@ defaults). The optional table's defaults are:
 
 
 ==============================================================================
-4. Adapters and configurations         *bemtvi-dap-adapters-and-configurations*
+4. Adapters and configurations        *bemtvi-dap-adapters-and-configurations*
 
 Exactly nvim-dap's two-table model. `dap.adapters[name]` is one of:
 
@@ -185,7 +185,7 @@ than one).
 
 
 ==============================================================================
-5. Variable expansion                           *bemtvi-dap-variable-expansion*
+5. Variable expansion                          *bemtvi-dap-variable-expansion*
 
 Configuration string values are expanded against the current editor context the
 moment a session starts (recursing into nested tables and `args` lists), so the
@@ -247,7 +247,7 @@ is left as-is and warned about.
 
 
 ==============================================================================
-6. Commands                                               *bemtvi-dap-commands*
+6. Commands                                              *bemtvi-dap-commands*
 
 >
     :DapContinue [config]    Start debugging, or resume a stopped session (see below).
@@ -287,7 +287,7 @@ Three commands take an optional argument; the rest take none:
 
 
 ==============================================================================
-7. Mappings                                               *bemtvi-dap-mappings*
+7. Mappings                                              *bemtvi-dap-mappings*
 
 Defaults (rebind / disable via `opts.mappings`):
 
@@ -327,7 +327,7 @@ entry, or `mappings = false` for all):
 
 
 ==============================================================================
-8. API                                                         *bemtvi-dap-api*
+8. API                                                        *bemtvi-dap-api*
 
 >lua
     local dap = require("bemtvi-dap")
@@ -356,7 +356,7 @@ entry, or `mappings = false` for all):
 
 
 ==============================================================================
-9. Highlights                                           *bemtvi-dap-highlights*
+9. Highlights                                          *bemtvi-dap-highlights*
 
 Defined as fallbacks (a colorscheme or `opts.highlights` override wins):
 
@@ -376,7 +376,7 @@ Defined as fallbacks (a colorscheme or `opts.highlights` override wins):
 
 
 ==============================================================================
-10. Trying it locally                            *bemtvi-dap-trying-it-locally*
+10. Trying it locally                           *bemtvi-dap-trying-it-locally*
 
 This repo ships a runnable demo with a self-contained mock adapter (no debugger
 install needed):
