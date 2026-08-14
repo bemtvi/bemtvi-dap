@@ -182,7 +182,12 @@ function Session:_on_reverse_request(msg)
     end)
     self:respond(msg, ok, ok and {} or nil, ok and nil or "runInTerminal: spawn failed")
   else
-    self:respond(msg, false, nil, ("bemtvi-dap: unsupported reverse request %q"):format(msg.command))
+    self:respond(
+      msg,
+      false,
+      nil,
+      ("bemtvi-dap: unsupported reverse request %q"):format(msg.command)
+    )
   end
 end
 
@@ -280,7 +285,11 @@ function Session:start(config)
     -- Fire launch/attach; its response arrives after configurationDone.
     self:request(config.request, config, function(lerr)
       if lerr then
-        notify(self, ("bemtvi-dap: %s failed: %s"):format(config.request, tostring(lerr.message)), 4)
+        notify(
+          self,
+          ("bemtvi-dap: %s failed: %s"):format(config.request, tostring(lerr.message)),
+          4
+        )
       end
     end)
   end)

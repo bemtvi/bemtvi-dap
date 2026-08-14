@@ -66,16 +66,15 @@ function M._install_keymaps()
     return
   end
   if not view:bufnr() then
-    btv.wait_for(function()
-      return view and view:bufnr()
-    end, { tries = 50, message = "bemtvi-dap: the sidebar buffer never materialized" }):next(
-      function()
+    btv
+      .wait_for(function()
+        return view and view:bufnr()
+      end, { tries = 50, message = "bemtvi-dap: the sidebar buffer never materialized" })
+      :next(function()
         M._install_keymaps()
-      end,
-      function(err)
+      end, function(err)
         btv.notify(tostring(err and err.message or err), 4)
-      end
-    )
+      end)
     return
   end
   local buf = view:bufnr()
@@ -174,20 +173,19 @@ local function decor_when_ready(pending_marks)
     return
   end
   awaiting_buf = true
-  btv.wait_for(function()
-    return view and view:bufnr()
-  end, { tries = 50, message = "bemtvi-dap: the sidebar buffer never materialized" }):next(
-    function()
+  btv
+    .wait_for(function()
+      return view and view:bufnr()
+    end, { tries = 50, message = "bemtvi-dap: the sidebar buffer never materialized" })
+    :next(function()
       awaiting_buf = false
       if view and view:bufnr() then
         view:set_decor(ns, pending_marks)
       end
-    end,
-    function(err)
+    end, function(err)
       awaiting_buf = false
       btv.notify(tostring(err and err.message or err), 4)
-    end
-  )
+    end)
 end
 
 -- A new stopped snapshot arrived: store the frames, focus the top frame, and load

@@ -73,8 +73,13 @@ btv.plugins({
         args = { "-m", "debugpy.adapter" },
       }
       dap.configurations.python = {
-        { type = "python", request = "launch", name = "launch file",
-          program = "${file}", console = "integratedTerminal" },
+        {
+          type = "python",
+          request = "launch",
+          name = "launch file",
+          program = "${file}",
+          console = "integratedTerminal",
+        },
       }
     end,
   },

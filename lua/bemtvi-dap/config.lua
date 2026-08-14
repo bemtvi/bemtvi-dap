@@ -107,7 +107,10 @@ function M.validate_adapter(adapter, type_name)
   end
   if type(adapter) ~= "table" then
     error(
-      ("bemtvi-dap: adapter %q must be a table or function, got %s"):format(type_name, type(adapter))
+      ("bemtvi-dap: adapter %q must be a table or function, got %s"):format(
+        type_name,
+        type(adapter)
+      )
     )
   end
   local kind = adapter.type or "executable"
