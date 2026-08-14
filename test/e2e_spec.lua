@@ -68,6 +68,16 @@ btv.test.describe("bemtvi-dap end-to-end (real adapter over btv.process)", funct
     local marks = btv.buf.extmarks(dap.signs.path_bufnr(prog), stopped_ns, 0, -1)
     btv.test.expect(#marks).never.to_be(0)
 
+    -- ...and it tints the line with a full-width `line_hl_group` background rather than
+    -- a char-range span over the text. The distinction is load-bearing, not cosmetic: a
+    -- range span joins the winner-takes-cell resolution and so loses every cell a syntax
+    -- span covers, which left the stopped line tinted only in its uncoloured gaps.
+    local detailed =
+      btv.buf.extmarks(dap.signs.path_bufnr(prog), stopped_ns, 0, -1, { details = true })
+    local d = detailed[1] and detailed[1][4] or {}
+    btv.test.expect(d.line_hl_group).to_be("BtvDapStoppedLine")
+    btv.test.expect(d.end_col).to_be_nil()
+
     -- Evaluate an expression in the stopped frame over the live adapter.
     local evaluated
     s:evaluate("1+1", s.current_frame.id, "repl", function(err, body)

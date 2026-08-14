@@ -2,9 +2,14 @@
 -- extmarks (not a view). Two namespaces keep the concerns independent: breakpoint
 -- signs persist across stops, while the single stopped marker moves with execution.
 --
--- Only `sign_text` and a ranged `hl_group` actually render through bemtvi's extmark
--- layer (a whole-line `line_hl_group` is stored-but-unpainted), so the stopped line
--- is drawn as a sign PLUS a ranged highlight spanning the line's text.
+-- The stopped line is a sign PLUS a `line_hl_group` mark — the core's full-width
+-- line-background layer, painted under the text the way `'cursorline'` is. It used to
+-- be drawn as a ranged `hl_group` spanning the line's text, on the belief that
+-- `line_hl_group` was stored-but-unpainted; it is not, and the range form was worse in
+-- three ways: it had to READ the line to compute an `end_col`, it stopped at the end of
+-- the text instead of running to the window edge, and — being a char-range span — it
+-- entered the winner-takes-cell resolution and LOST every cell a syntax span covered,
+-- so the stopped line was tinted only in its uncoloured gaps.
 
 local M = {}
 
@@ -97,8 +102,8 @@ function M.clear_breakpoints(path)
   end
 end
 
--- Mark session `sid`'s stopped line: a `▶` sign + a ranged highlight across the
--- line's text. 1-based `line`. Replaces that session's previous marker and repaints
+-- Mark session `sid`'s stopped line: a `▶` sign + a full-width line background.
+-- 1-based `line`. Replaces that session's previous marker and repaints
 -- every session's markers.
 function M.set_stopped(sid, path, line)
   stopped_locs[sid] = { path = path, line = line }
@@ -138,13 +143,10 @@ function M.render_stopped()
   for _, loc in pairs(stopped_locs) do
     local bufnr = index[abspath(loc.path)]
     if bufnr and loc.line >= 1 and loc.line <= btv.buf.line_count(bufnr) then
-      local text = btv.buf.lines(bufnr, loc.line - 1, loc.line, false)[1] or ""
       btv.buf.set_extmark(bufnr, stopped_ns, loc.line - 1, 0, {
         sign_text = s.text,
         sign_hl_group = s.hl,
-        end_row = loc.line - 1,
-        end_col = #text,
-        hl_group = s.line_hl,
+        line_hl_group = s.line_hl,
         priority = 30,
       })
       marked[bufnr] = true
