@@ -17,7 +17,7 @@ local dap = require("bemtvi-dap")
 local ROOT = package.path:match("(.-)/lua/%?%.lua") or "."
 local MOCK = ROOT .. "/test/support/mock_adapter.py"
 
-local function setup_session(t, prog)
+local function setup_session(prog)
   dap.setup({ jump_to_stopped = true })
   dap.adapters.mock = { command = "python3", args = { MOCK } }
   dap.configurations.btvdapmock = {
@@ -56,7 +56,7 @@ btv.test.describe("bemtvi-dap end-to-end (real adapter over btv.process)", funct
     btv.test.expect(dap.breakpoints.list()[dap.signs.abspath(prog)][1].line).to_be(2)
 
     -- Launch the adapter; it stops at line 2.
-    setup_session(t, prog)
+    setup_session(prog)
     wait_stopped(t, 2)
 
     local s = dap.session()
@@ -110,7 +110,7 @@ btv.test.describe("bemtvi-dap end-to-end (real adapter over btv.process)", funct
     btv.await(btv.fs.write(prog, "x = 1\ny = 2\n"))
     t:cmd("edit " .. prog)
 
-    setup_session(t, prog)
+    setup_session(prog)
     wait_stopped(t, 2)
 
     local scopes
@@ -216,7 +216,7 @@ btv.test.describe("bemtvi-dap end-to-end (real adapter over btv.process)", funct
     btv.await(btv.fs.write(prog, "x = 1\n"))
     t:cmd("edit " .. prog)
 
-    setup_session(t, prog)
+    setup_session(prog)
     wait_stopped(t, 2)
     local s = dap.session()
     btv.test.expect(s.capabilities.supportsSetVariable).to_be_truthy()
@@ -266,7 +266,7 @@ btv.test.describe("bemtvi-dap end-to-end (real adapter over btv.process)", funct
     btv.await(btv.fs.write(prog, "x = 1\ny = 2\n"))
     t:cmd("edit " .. prog)
 
-    setup_session(t, prog)
+    setup_session(prog)
     wait_stopped(t, 2)
 
     dap.sidebar_toggle() -- open the sidebar (installs its buffer-local action keys)
@@ -304,7 +304,7 @@ btv.test.describe("bemtvi-dap end-to-end (real adapter over btv.process)", funct
     btv.await(btv.fs.write(prog, "a = 1\nb = 2\nc = 3\n"))
     t:cmd("edit " .. prog)
 
-    setup_session(t, prog)
+    setup_session(prog)
     wait_stopped(t, 2)
     dap.step_over()
     wait_stopped(t, 3)
@@ -400,7 +400,7 @@ btv.test.describe("bemtvi-dap end-to-end (real adapter over btv.process)", funct
     t:cmd("edit " .. prog)
 
     dap.exception_filters = nil -- start from the adapter defaults
-    setup_session(t, prog)
+    setup_session(prog)
     wait_stopped(t, 2)
 
     -- The adapter advertises raised (off by default) + uncaught (on by default).

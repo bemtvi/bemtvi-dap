@@ -252,7 +252,7 @@ btv.test.describe("bemtvi-dap breakpoints", function()
   end)
 
   btv.test.it("opens a breakpoints named list that refreshes on change", function(t)
-    local f = open_temp(t)
+    open_temp(t)
     local srcwin = btv.win.current()
     t:feed("2G")
     breakpoints.toggle()
