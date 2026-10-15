@@ -37,14 +37,14 @@ btv.test.describe("bemtvi-dap.variables expansion", function()
     btv.test.expect(out.base).to_be("main.py")
     btv.test.expect(out.noext).to_be("main")
     btv.test.expect(out.ext).to_be("py")
-    btv.test.expect(out.dirn).to_be(vim.fn.fnamemodify(abs, ":h"))
+    btv.test.expect(out.dirn).to_be(btv.fname.modify(abs, ":h"))
     btv.test.expect(out.rel).to_be("main.py") -- file is under the cwd we cd'd into
   end)
 
   btv.test.it("expands the workspace / cwd variables", function(t)
     local dir = btv.test.tempdir()
     open_in(t, dir, "a.py")
-    local cwd = vim.fn.getcwd()
+    local cwd = btv.cwd()
     local out = variables.expand({
       wsf = "${workspaceFolder}",
       wsfb = "${workspaceFolderBasename}",
@@ -52,7 +52,7 @@ btv.test.describe("bemtvi-dap.variables expansion", function()
     })
     btv.test.expect(out.wsf).to_be(cwd)
     btv.test.expect(out.cwd).to_be(cwd)
-    btv.test.expect(out.wsfb).to_be(vim.fn.fnamemodify(cwd, ":t"))
+    btv.test.expect(out.wsfb).to_be(btv.fname.modify(cwd, ":t"))
   end)
 
   btv.test.it("expands ${env:NAME} (and empties an unset one)", function(t)
@@ -89,7 +89,7 @@ btv.test.describe("bemtvi-dap.variables expansion", function()
     })
     btv.test.expect(out.args[2]).to_be(abs)
     btv.test.expect(out.args[3]).to_be("main.py")
-    btv.test.expect(out.env.ROOT).to_be(vim.fn.getcwd())
+    btv.test.expect(out.env.ROOT).to_be(btv.cwd())
     btv.test.expect(out.n).to_be(5) -- non-strings pass through untouched
   end)
 

@@ -33,7 +33,7 @@ local function abspath(p)
   if not p or p == "" then
     return p
   end
-  return vim.fn.fnamemodify(p, ":p")
+  return btv.fname.modify(p, ":p")
 end
 M.abspath = abspath
 

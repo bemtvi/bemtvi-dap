@@ -43,7 +43,7 @@ local function current_file()
   if not name or name == "" then
     return ""
   end
-  return vim.fn.fnamemodify(name, ":p")
+  return btv.fname.modify(name, ":p")
 end
 
 -- macOS resolves the firmlinks /var, /tmp, /etc to /private/var, /private/tmp,
@@ -80,19 +80,19 @@ end
 -- empty rather than to a bogus path.
 function M.context()
   local file = current_file()
-  local cwd = vim.fn.getcwd() or ""
+  local cwd = btv.cwd() or ""
   local rel = relativize(file, cwd)
   local has = file ~= ""
   return {
     file = file,
-    fileBasename = has and vim.fn.fnamemodify(file, ":t") or "",
-    fileBasenameNoExtension = has and vim.fn.fnamemodify(file, ":t:r") or "",
-    fileDirname = has and vim.fn.fnamemodify(file, ":h") or "",
-    fileExtname = has and vim.fn.fnamemodify(file, ":e") or "",
+    fileBasename = has and btv.fname.modify(file, ":t") or "",
+    fileBasenameNoExtension = has and btv.fname.modify(file, ":t:r") or "",
+    fileDirname = has and btv.fname.modify(file, ":h") or "",
+    fileExtname = has and btv.fname.modify(file, ":e") or "",
     relativeFile = rel,
-    relativeFileDirname = rel ~= "" and vim.fn.fnamemodify(rel, ":h") or "",
+    relativeFileDirname = rel ~= "" and btv.fname.modify(rel, ":h") or "",
     workspaceFolder = cwd,
-    workspaceFolderBasename = cwd ~= "" and vim.fn.fnamemodify(cwd, ":t") or "",
+    workspaceFolderBasename = cwd ~= "" and btv.fname.modify(cwd, ":t") or "",
     cwd = cwd,
   }
 end

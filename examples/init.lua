@@ -32,15 +32,15 @@
 --
 -- A REAL setup would instead register e.g. debugpy (see the commented block below).
 -- The leader is space here; set it before anything maps <leader>.
-vim.g.mapleader = " "
+btv.g.mapleader = " "
 
-local here = vim.fn.expand("<sfile>:p:h") -- the examples/ dir
+local here = btv.expand("<sfile>:p:h") -- the examples/ dir
 
 -- Load the plugin straight from this repo (a local-dev spec: `dir` is never cloned).
 btv.plugins({
   {
     name = "bemtvi-dap",
-    dir = vim.fn.fnamemodify(here, ":h"), -- the repo root (examples/'s parent)
+    dir = btv.fname.modify(here, ":h"), -- the repo root (examples/'s parent)
     config = function()
       local dap = require("bemtvi-dap")
       dap.setup({

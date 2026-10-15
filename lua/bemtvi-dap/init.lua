@@ -340,7 +340,7 @@ end
 -- The names of the launch configurations available for the current buffer's filetype —
 -- the candidate set `:DapContinue <Tab>` completes against.
 function M._configuration_names()
-  local ft = vim.bo[btv.buf.current()].filetype
+  local ft = btv.bo[btv.buf.current()].filetype
   local names = {}
   for _, c in ipairs(M.configurations[ft] or {}) do
     if c.name and c.name ~= "" then
@@ -360,7 +360,7 @@ function M.continue(name)
     M._session:continue()
     return
   end
-  local ft = vim.bo[btv.buf.current()].filetype
+  local ft = btv.bo[btv.buf.current()].filetype
   local cfgs = M.configurations[ft]
   if not cfgs or #cfgs == 0 then
     btv.notify(("bemtvi-dap: no debug configuration for filetype %q"):format(tostring(ft)), 3)

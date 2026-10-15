@@ -172,7 +172,7 @@ end
 -- clamped to the first row (highlighting only the first line) AND `#lines` would fall
 -- behind the real buffer, so `set_cursor(#lines)` could no longer tail the newest line.
 local function push(text, hl)
-  for _, line in ipairs(vim.split(text, "\n")) do
+  for _, line in ipairs(btv.str.split(text, "\n")) do
     lines[#lines + 1] = line
     if hl then
       marks[#marks + 1] =
@@ -260,11 +260,11 @@ function M.eval(expr)
   local frame_id = session.current_frame and session.current_frame.id
   session:evaluate(expr, frame_id, "repl", function(err, body)
     if err then
-      for _, l in ipairs(vim.split(tostring(err.message or ""), "\n")) do
+      for _, l in ipairs(btv.str.split(tostring(err.message or ""), "\n")) do
         push("  " .. l, "BtvDapReplError")
       end
     else
-      for _, l in ipairs(vim.split((body and body.result) or "", "\n")) do
+      for _, l in ipairs(btv.str.split((body and body.result) or "", "\n")) do
         push("  " .. l)
       end
     end
