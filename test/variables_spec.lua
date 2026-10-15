@@ -61,8 +61,15 @@ btv.test.describe("bemtvi-dap.variables expansion", function()
       p = "${env:PATH}",
       missing = "${env:BEMTVI_DAP_DEFINITELY_UNSET}",
     })
-    btv.test.expect(out.p).to_be(os.getenv("PATH"))
+    btv.test.expect(out.p).to_be(btv.env.get("PATH"))
     btv.test.expect(out.missing).to_be("")
+  end)
+
+  btv.test.it("expands ${env:NAME} set this session with btv.env.set", function(t)
+    open_in(t, btv.test.tempdir(), "a.py")
+    btv.env.set("BEMTVI_DAP_SESSION_ENV", "from-btv-env")
+    local out = variables.expand({ v = "${env:BEMTVI_DAP_SESSION_ENV}" })
+    btv.test.expect(out.v).to_be("from-btv-env")
   end)
 
   btv.test.it("leaves an unrecognised ${...} untouched and reports it", function(t)

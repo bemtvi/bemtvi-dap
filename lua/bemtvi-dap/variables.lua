@@ -106,7 +106,10 @@ end
 -- literally (no capture-ref magic).
 local function expand_string(s, vars, unknown, flags)
   s = s:gsub("%${env:([%w_]+)}", function(name)
-    return os.getenv(name) or ""
+    -- `btv.env.get` also sees names set this session via `btv.env.set`; it returns a
+    -- null sentinel (not nil) for an unset name, hence the type test.
+    local v = btv.env.get(name)
+    return type(v) == "string" and v or ""
   end)
   s = s:gsub("%${([%w_]+)}", function(name)
     local v = vars[name]
