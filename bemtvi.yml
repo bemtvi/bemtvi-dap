@@ -1,0 +1,28 @@
+# selene standard library for a bemtvi plugin: base PUC Lua plus the `btv` global.
+#
+# `lua_versions: [lua54]` is the GRAMMAR (bemtvi runs PUC Lua 5.4: `&`, `//`,
+# goto). `base: lua51` is the GLOBALS, kept at 5.1 because selene's 5.2/5.3 stds
+# are incomplete; the 5.2+ stdlib names PUC 5.4 adds are declared below. The
+# grammar needs a selene built with it:
+#
+#     cargo install selene --features selene-lib/lua54
+#
+# `vim` is deliberately absent: a first-party plugin targets `btv.*`, so any
+# `vim.*` use is reported as an undefined global.
+base: lua51
+name: bemtvi
+lua_versions:
+  - lua54
+globals:
+  btv:
+    any: true
+  table.unpack:
+    any: true
+  table.move:
+    any: true
+  coroutine.isyieldable:
+    args: []
+  utf8:
+    any: true
+  package.config:
+    any: true

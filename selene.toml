@@ -1,0 +1,8 @@
+std = "bemtvi"
+exclude = [".panvimdoc/**"]
+
+[lints]
+# `"\u{XXXX}"` is a valid 5.3+ escape, but the lua51 base std doesn't know it.
+bad_string_escape = "allow"
+# Mixed tables are idiomatic in btv specs (`{ "owner/repo", config = fn }`).
+mixed_table = "allow"
