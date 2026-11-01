@@ -128,11 +128,14 @@ btv.test.describe("bemtvi-dap in a modeless session", function()
     ui.close()
   end)
 
-  -- The lhs set of the global `mode` maps.
+  -- The lhs set of bemtvi-dap's own global `mode` maps (the editor's modeless layout has
+  -- its own F12 / Shift+F12, which must not count as ours).
   local function global_lhs(mode)
     local set = {}
     for _, m in ipairs(btv.keymap.get(mode)) do
-      set[m.lhs] = true
+      if (m.desc or ""):find("^bemtvi%-dap: ") then
+        set[m.lhs] = true
+      end
     end
     return set
   end
