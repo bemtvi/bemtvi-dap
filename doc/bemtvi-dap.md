@@ -292,6 +292,18 @@ require("bemtvi-dap").setup({
 })
 ```
 
+## Modeless editing
+
+In a modeless session (`:set modeless`, the GUI and web editing model with no Normal mode) the
+sidebar and the REPL rest in Insert like every buffer and refuse typing (`E21`). The sidebar keys
+above bind in the `modeless` keymap layer as well as in Normal mode, so they work the same.
+
+A global key binds there too when it types nothing: the function keys and any Ctrl or Alt chord
+you configure. A key that starts with a typed character (the `<leader>d…` defaults, a bare
+letter) stays Normal-only, since in the `modeless` layer it would hold that character every time
+you type it in a file. Reach those actions through the `:Dap…` commands in the command palette,
+or rebind them to a chord.
+
 # API
 
 ```lua

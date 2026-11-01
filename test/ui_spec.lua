@@ -110,3 +110,66 @@ btv.test.describe("bemtvi-dap session commands with nothing running", function()
     end
   end)
 end)
+
+-- A modeless session (`'modeless'`, GUI and web) has no Normal mode: the sidebar rests
+-- in Insert, refuses typing with E21, and takes its keys through the `modeless` keymap
+-- layer. The global debug keys follow suit where they can: the F-keys type nothing,
+-- so they bind there too, while a `<leader>` key would hold every typed space and
+-- stays Normal-only.
+btv.test.describe("bemtvi-dap in a modeless session", function()
+  btv.test.before_each(function()
+    btv.o.modeless = true
+    dap.setup({})
+    dap._sessions, dap._session = {}, nil
+    ui.close()
+  end)
+
+  btv.test.after_each(function()
+    ui.close()
+  end)
+
+  -- The lhs set of the global `mode` maps.
+  local function global_lhs(mode)
+    local set = {}
+    for _, m in ipairs(btv.keymap.get(mode)) do
+      set[m.lhs] = true
+    end
+    return set
+  end
+
+  btv.test.it("the sidebar's `a` opens the add-watch prompt", function(t)
+    ui.open()
+    t:wait_for(function()
+      return ui.bufnr() and btv.buf.current() == ui.bufnr()
+    end, { message = "the sidebar never took focus" })
+    t:wait_for(function()
+      for _, m in ipairs(btv.keymap.buf_get(0, "modeless")) do
+        if m.lhs == "a" then
+          return true
+        end
+      end
+    end, { message = "the sidebar's keys never reached the modeless layer" })
+    btv.test.expect(t:mode()).to_be("i")
+    t:feed("a")
+    t:wait_for(function()
+      return t:mode() == "c"
+    end, { message = "a never opened the prompt" })
+    t:feed("<Esc>")
+  end)
+
+  btv.test.it("binds the F-keys in the modeless layer, not the leader keys", function()
+    local modeless = global_lhs("modeless")
+    btv.test.expect(modeless["<F5>"]).to_be(true)
+    btv.test.expect(modeless["<S-F10>"]).to_be(true)
+    for lhs in pairs(modeless) do
+      btv.test.expect(lhs:sub(1, 1)).never.to_be(btv.g.mapleader or "\\")
+    end
+    btv.test.expect(global_lhs("n")["<F5>"]).to_be(true)
+  end)
+
+  btv.test.it("a re-run of setup withdraws the modeless keys it bound", function()
+    dap.setup({ mappings = false })
+    btv.test.expect(global_lhs("modeless")["<F5>"]).to_be_nil()
+    btv.test.expect(global_lhs("n")["<F5>"]).to_be_nil()
+  end)
+end)

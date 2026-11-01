@@ -10,6 +10,7 @@ Table of Contents                               *bemtvi-dap-table-of-contents*
 5. Variable expansion                          |bemtvi-dap-variable-expansion|
 6. Commands                                              |bemtvi-dap-commands|
 7. Mappings                                              |bemtvi-dap-mappings|
+  - Modeless editing                    |bemtvi-dap-mappings-modeless-editing|
 8. API                                                        |bemtvi-dap-api|
 9. Highlights                                          |bemtvi-dap-highlights|
 10. Trying it locally                           |bemtvi-dap-trying-it-locally|
@@ -324,6 +325,21 @@ entry, or `mappings = false` for all):
       mappings = { continue = "<F9>", repl_toggle = false },
     })
 <
+
+
+MODELESS EDITING                        *bemtvi-dap-mappings-modeless-editing*
+
+In a modeless session (`:set modeless`, the GUI and web editing model with no
+Normal mode) the sidebar and the REPL rest in Insert like every buffer and
+refuse typing (`E21`). The sidebar keys above bind in the `modeless` keymap
+layer as well as in Normal mode, so they work the same.
+
+A global key binds there too when it types nothing: the function keys and any
+Ctrl or Alt chord you configure. A key that starts with a typed character (the
+`<leader>d…` defaults, a bare letter) stays Normal-only, since in the
+`modeless` layer it would hold that character every time you type it in a file.
+Reach those actions through the `:Dap…` commands in the command palette, or
+rebind them to a chord.
 
 
 ==============================================================================

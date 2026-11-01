@@ -85,9 +85,16 @@ function M._install_keymaps()
     remove = M.remove_under_cursor,
     refresh = M.refresh,
   }
+  -- Normal and the `modeless` keymap layer: a modeless session (GUI and web) has no
+  -- Normal mode, and the read-only sidebar takes its keys only through that layer.
   for action, lhs in pairs(maps) do
     if lhs and actions[action] then
-      btv.keymap.set("n", lhs, actions[action], { buffer = buf, desc = "bemtvi-dap: " .. action })
+      btv.keymap.set(
+        { "n", "modeless" },
+        lhs,
+        actions[action],
+        { buffer = buf, desc = "bemtvi-dap: " .. action }
+      )
     end
   end
   keymaps_installed = true
@@ -105,7 +112,8 @@ function M.is_open()
   return view ~= nil and view:winid() ~= nil
 end
 
--- The sidebar's backing buffer number (or nil before it exists). For tests / advanced
+-- The sidebar's backing buffer number (nil before the view is created, `false` before its
+-- buffer exists). For tests / advanced
 -- callers that want to read the rendered content.
 function M.bufnr()
   return view and view:bufnr()
