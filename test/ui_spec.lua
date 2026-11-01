@@ -157,18 +157,25 @@ btv.test.describe("bemtvi-dap in a modeless session", function()
     t:feed("<Esc>")
   end)
 
-  btv.test.it("binds the F-keys in the modeless layer, not the leader keys", function()
+  -- The modeless layer takes VS Code's debug keys (`modeless_mappings`), not the vim ones:
+  -- F12 / Shift+F12 belong to the layout's go-to-definition / references there, and a
+  -- `<leader>` key would hold every typed space.
+  btv.test.it("binds VS Code's debug keys in the modeless layer", function()
     local modeless = global_lhs("modeless")
-    btv.test.expect(modeless["<F5>"]).to_be(true)
-    btv.test.expect(modeless["<S-F10>"]).to_be(true)
+    for _, lhs in ipairs({ "<F5>", "<F10>", "<F11>", "<S-F11>", "<S-F5>", "<C-S-F5>", "<F9>" }) do
+      btv.test.expect(lhs .. "=" .. tostring(modeless[lhs])).to_be(lhs .. "=true")
+    end
+    btv.test.expect(modeless["<F12>"]).to_be_nil()
+    btv.test.expect(modeless["<S-F12>"]).to_be_nil()
     for lhs in pairs(modeless) do
       btv.test.expect(lhs:sub(1, 1)).never.to_be(btv.g.mapleader or "\\")
     end
-    btv.test.expect(global_lhs("n")["<F5>"]).to_be(true)
+    -- The vim keys stay in Normal mode alone.
+    btv.test.expect(global_lhs("n")["<F12>"]).to_be(true)
   end)
 
   btv.test.it("a re-run of setup withdraws the modeless keys it bound", function()
-    dap.setup({ mappings = false })
+    dap.setup({ mappings = false, modeless_mappings = false })
     btv.test.expect(global_lhs("modeless")["<F5>"]).to_be_nil()
     btv.test.expect(global_lhs("n")["<F5>"]).to_be_nil()
   end)

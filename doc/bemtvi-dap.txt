@@ -334,12 +334,23 @@ Normal mode) the sidebar and the REPL rest in Insert like every buffer and
 refuse typing (`E21`). The sidebar keys above bind in the `modeless` keymap
 layer as well as in Normal mode, so they work the same.
 
-A global key binds there too when it types nothing: the function keys and any
-Ctrl or Alt chord you configure. A key that starts with a typed character (the
-`<leader>d…` defaults, a bare letter) stays Normal-only, since in the
-`modeless` layer it would hold that character every time you type it in a file.
-Reach those actions through the `:Dap…` commands in the command palette, or
-rebind them to a chord.
+The global keys there are VS Code's debug keys, a table of their own,
+`modeless_mappings`:
+
+>
+    <F5>          continue / start        <S-F11>      step out
+    <F10>         step over               <S-F5>       terminate
+    <F11>         step into               <C-S-F5>     restart (<D-S-F5> on macOS)
+    <F9>          toggle breakpoint
+<
+
+The vim `mappings` stay in Normal mode: F12 and Shift+F12 are the modeless
+layout's go to definition and find references, and a `<leader>` key would
+hold every space you type in a file. `modeless_mappings` takes the same shape
+as `mappings`, and `modeless_mappings = false` binds none. The other actions
+(conditional and edit breakpoint, the REPL and sidebar toggles) are the
+`:Dap…` commands, in the command palette. In the browser, F5 stays with the
+browser (reload), so start or continue with `:DapContinue` there.
 
 
 ==============================================================================

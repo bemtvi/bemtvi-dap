@@ -755,25 +755,6 @@ local COMMANDS = {
   { "DapSidebarToggle", "sidebar_toggle", "Toggle the scopes/stack sidebar" },
 }
 
--- Whether `lhs` starts with a key that types text: a printable character, or the leader
--- / space / another named printable. Such a key stays out of the `modeless` keymap layer:
--- bound there globally it would hold that character every time it is typed in a file.
--- Everything else (the F-keys, a Ctrl or Alt chord) binds there too, so the debug keys
--- work in a modeless session, which has no Normal mode.
-local function types_text(lhs)
-  local first = lhs:match("^<[^>]+>")
-  if not first then
-    return true
-  end
-  first = first:lower()
-  return first == "<leader>"
-    or first == "<localleader>"
-    or first == "<space>"
-    or first == "<lt>"
-    or first == "<bslash>"
-    or first == "<bar>"
-end
-
 local MAP_ACTIONS = {
   continue = M.continue,
   step_over = M.step_over,
@@ -880,24 +861,25 @@ function M.setup(opts)
   -- Default keymaps (any false entry, or `mappings = false`, disables it). An entry's
   -- value is a single lhs string, or a list of lhs strings that all fire the action
   -- (so an F-key action can also bind its Shift variant — <F5> and <S-F5>).
+  -- `mappings` binds in Normal mode; `modeless_mappings` (VS Code's debug keys) in the
+  -- `modeless` keymap layer, for a modeless session, which has no Normal mode.
   --
   -- setup() is a full reconfigure, so the keys installed by a PREVIOUS setup are
   -- dropped first: re-running it with a different (or disabled) `mappings` must not
   -- leave the old bindings behind.
   for _, map in ipairs(installed_maps) do
-    for _, mode in ipairs(map.modes) do
-      pcall(btv.keymap.del, mode, map.key)
-    end
+    pcall(btv.keymap.del, map.mode, map.key)
   end
   installed_maps = {}
-  if M.config.mappings ~= false then
-    for action, lhs in pairs(M.config.mappings) do
-      if lhs and MAP_ACTIONS[action] then
-        local keys = type(lhs) == "table" and lhs or { lhs }
-        for _, key in ipairs(keys) do
-          local modes = types_text(key) and { "n" } or { "n", "modeless" }
-          btv.keymap.set(modes, key, MAP_ACTIONS[action], { desc = "bemtvi-dap: " .. action })
-          installed_maps[#installed_maps + 1] = { key = key, modes = modes }
+  for mode, table_ in pairs({ n = M.config.mappings, modeless = M.config.modeless_mappings }) do
+    if table_ ~= false then
+      for action, lhs in pairs(table_ or {}) do
+        if lhs and MAP_ACTIONS[action] then
+          local keys = type(lhs) == "table" and lhs or { lhs }
+          for _, key in ipairs(keys) do
+            btv.keymap.set(mode, key, MAP_ACTIONS[action], { desc = "bemtvi-dap: " .. action })
+            installed_maps[#installed_maps + 1] = { key = key, mode = mode }
+          end
         end
       end
     end

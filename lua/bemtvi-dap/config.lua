@@ -71,6 +71,20 @@ function M.defaults()
       sidebar_toggle = "<leader>du",
       terminate = "<leader>dx",
     },
+    -- The keys in a modeless session (`:set modeless`, GUI and web), which has no
+    -- Normal mode: VS Code's debug keys, bound in the `modeless` keymap layer. They are
+    -- their own table because the vim ones above don't fit there: F12 / Shift+F12 are the
+    -- layout's go-to-definition / references, and a `<leader>` key would hold every typed
+    -- space. Same shape as `mappings`; `modeless_mappings = false` binds none.
+    modeless_mappings = {
+      continue = "<F5>",
+      step_over = "<F10>",
+      step_into = "<F11>",
+      step_out = "<S-F11>",
+      restart = { "<C-S-F5>", "<D-S-F5>" },
+      terminate = "<S-F5>",
+      toggle_breakpoint = "<F9>",
+    },
     -- Highlight-group overrides (merged over the fallback palette).
     highlights = {},
     -- Auto-jump the editor to the stopped frame's source line.
