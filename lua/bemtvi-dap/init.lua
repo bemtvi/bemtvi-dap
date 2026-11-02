@@ -785,6 +785,18 @@ function M.setup(opts)
   -- must take effect). Re-applying is safe: a default only fills a group the
   -- colorscheme left undefined, so this never overrides a theme.
   highlights.apply(M.config.highlights)
+  -- A theme load clears the groups (`:hi clear`) and changes the palette they derive
+  -- from, so re-derive them on every `ColorScheme`. Hooked once; it reads the live
+  -- config, so a later setup()'s overrides apply too.
+  if not M._colorscheme_hook then
+    M._colorscheme_hook = btv.on(
+      "ColorScheme",
+      { desc = "bemtvi-dap: re-derive the debugger's colours" },
+      function()
+        highlights.apply(M.config.highlights)
+      end
+    )
+  end
 
   signs.setup(M.config.signs)
   ui.setup(M.config)

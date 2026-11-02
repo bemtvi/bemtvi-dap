@@ -343,7 +343,10 @@ local dap = require("bemtvi-dap")
 
 # Highlights
 
-Defined as fallbacks (a colorscheme or `opts.highlights` override wins):
+Defined as fallbacks (a colorscheme or `opts.highlights` override wins). Their colours come
+from the active theme: each group takes one of its accents (`btv.hl.palette()`), and the stopped
+line's tint is the stop colour faded into its background (`btv.hl.blend`), so they match bemtvi's
+own theme, a ported one, or a light flavour, and are re-derived on every `:colorscheme`.
 
 ```
 BtvDapBreakpoint  BtvDapBreakpointCondition  BtvDapBreakpointRejected
